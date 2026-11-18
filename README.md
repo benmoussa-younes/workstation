@@ -1,14 +1,55 @@
 # Workstation Edition
 
-Ansible roles that turn a **Debian amd64** machine into a GNOME
-desktop on Wayland: the session, GDM, the link under NetworkManager, the
-identity, the boot splash and the declared applications. It is the desktop
-counterpart of the Server collection, `benmoussa.server`, and it is shipped as
-the collection `benmoussa.workstation`, version `0.1.0`.
+[![Release](https://img.shields.io/badge/release-0.1.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0)
+[![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
+[![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
-The product owns the desktop machine. It does **not** create the human account:
-the installer or the site creates it, and the product adds its desktop groups
-and its locale. GNOME on Wayland is the only desktop this product ships.
+Ansible roles that turn a **Debian amd64** machine into a GNOME desktop on
+Wayland — the session, the link, the identity, the boot splash and the declared
+applications — shipped as the collection `benmoussa.workstation`.
+
+![The Workstation Edition desktop](assets/screenshots/desktop.png)
+
+`Workstation Edition` is the desktop counterpart of the Server collection,
+`benmoussa.server`. The product owns the desktop machine; it does **not** create
+the human account: the installer or the site creates it, and the product adds
+its desktop groups and its locale. GNOME on Wayland is the only desktop it
+ships.
+
+## What it does
+
+- **A GNOME desktop on Wayland**, from Debian's own packages: the shell, GDM,
+  PipeWire, the fonts and the declared applications. One desktop, no edition to
+  choose.
+- **One owner for the link**: NetworkManager carries the wired or Wi-Fi link,
+  with a static address you declare, a resolver that always has an upstream, and
+  a Wi-Fi key stored derived from the passphrase — never in clear.
+- **An identity and a boot experience**: the product's name in os-release and on
+  the login banner, the emerald wallpaper, GDM's logo, the GRUB menu and a
+  Plymouth theme that also asks for the LUKS passphrase.
+- **A declared application set**: Firefox from Mozilla, LibreOffice, Evolution,
+  GIMP, Inkscape, Secrets, Ptyxis and VLC as the default media handler — plus
+  six folders in the application grid.
+- **Developer tools on demand**: the `scripts` interpreter from its public
+  release, the .NET 10 SDK, VSCodium and the rest through `developer_tools`;
+  OpenCode when `coding_agents_opencode_enabled` is set, pinned by version and
+  checksum.
+- **An optional local hypervisor**: libvirt/virt-manager and rootless Podman,
+  with the firewall rules their bridges need.
+- **A security baseline**: nftables input default-deny with SSH restricted to
+  your sources, a hardened sshd, a password policy, kernel and audit
+  hardening — and Avahi retired rather than half-configured.
+- **Provable by construction**: every role reads its own change back, a second
+  converge must print `changed=0`, and a declared address is proved by the boot
+  that uses it.
+
+## Screenshots
+
+| The application grid | The system panel |
+|---|---|
+| ![Applications grouped into folders](assets/screenshots/app-grid.png) | ![The About panel: Workstation Edition 0.1.0, GNOME 48, Wayland](assets/screenshots/about.png) |
+| **The workspace switcher** | **A GNOME desktop, not a skin** |
+| ![Workspaces over the emerald wallpaper](assets/screenshots/workspaces.png) | ![The desktop with the product wallpaper](assets/screenshots/desktop.png) |
 
 ## Requirements
 
@@ -188,6 +229,20 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
   splash and the boot menu are not proved by `--check`.
 - After login, the session proof covers the Wayland session, NetworkManager,
   PipeWire, the dconf values, the fonts and the declared applications.
+
+## Project status
+
+`0.1.0` is the first release. Debian amd64 is the only supported base; a newer
+Debian release is added when the product declares it. The product is maintained
+by one author; there is no support contract, service level or warranty, express
+or implied (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md)).
+
+## Support
+
+- A defect or a question: open an issue on
+  [GitHub](https://github.com/benmoussa-younes/workstation/issues).
+- A security report: **not** a public issue — follow [`SECURITY.md`](SECURITY.md).
+- The gate and the release process are described in [`AGENTS.md`](AGENTS.md).
 
 ## Licence
 
