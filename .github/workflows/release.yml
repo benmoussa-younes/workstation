@@ -127,10 +127,14 @@ jobs:
       contents: write
     steps:
       - name: Download release assets
+        # The artifact keeps the paths it was uploaded with: `dist/*` and
+        # `release-notes.md` land relative to the workspace root. Downloading
+        # into `dist/` nested them again (`dist/dist`), which `gh release
+        # create` cannot upload -- measured on the v0.1.0 run, 2026-11-18.
         uses: actions/download-artifact@v4
         with:
           name: release-assets
-          path: dist
+          path: .
 
       - name: Create GitHub release
         env:
@@ -143,6 +147,6 @@ jobs:
             gh release create "$TAG" \
               --verify-tag \
               --title "Workstation Edition ${TAG}" \
-              --notes-file dist/release-notes.md \
+              --notes-file release-notes.md \
               dist/*
           fi
