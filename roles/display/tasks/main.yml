@@ -1,0 +1,230 @@
+---
+# GDM is the display manager. The declaration is the role's whole content: it
+# enables the unit, reads back the alias the package owns, and refuses a host
+# where another display manager would take the same seat.
+
+- name: Another display manager does not own the seat
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ item }}
+  loop:
+    - lightdm
+    - sddm
+    - greetd
+    - lxdm
+    - xdm
+  register: display_other_managers
+  changed_when: false
+  failed_when: false
+
+- name: No second display manager is installed
+  ansible.builtin.assert:
+    that:
+      - display_other_managers.results | selectattr('stdout', 'equalto', 'installed') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} carries another display manager
+      ({{ display_other_managers.results | selectattr('stdout', 'equalto', 'installed')
+          | map(attribute='item') | list }}). This product's seat belongs to GDM;
+      two managers take turns on `display-manager.service`.
+
+# `gnome-core` installs GDM; this task makes it the owner even when a site
+# removed the dependency.
+- name: GDM is installed
+  ansible.builtin.apt:
+    name: "{{ display_manager_package }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The display manager configuration directory exists
+  ansible.builtin.file:
+    path: "{{ display_manager_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# GDM reads `/etc/gdm3/daemon.conf` (and derives `/run/gdm3/custom.conf` from
+# it); it does not read an arbitrary `*.conf` drop-in. The key goes into the
+# distribution's file, preserving every other key, and is read back below.
+# An earlier product wrote `00-workstation-session.conf`; it was never read.
+- name: The session type is declared where GDM reads it
+  ansible.builtin.lineinfile:
+    path: "{{ display_manager_config }}"
+    regexp: '^\s*WaylandEnable\s*='
+    line: 'WaylandEnable=true'
+    insertafter: '^\[daemon\]'
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart GDM
+
+- name: A session drop-in GDM never read is withdrawn
+  ansible.builtin.file:
+    path: "{{ display_manager_config_dir }}/00-workstation-session.conf"
+    state: absent
+  notify: Restart GDM
+
+- name: The session declaration is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: grep -E '^WaylandEnable=true$' {{ display_manager_config }}
+  register: display_session_declared
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: GDM declares the Wayland session
+  ansible.builtin.assert:
+    that:
+      - display_session_declared.rc == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ display_manager_config }}` does not carry
+      `WaylandEnable=true`. Read the file; the session type is the one key GDM
+      actually reads.
+  when: not ansible_check_mode
+
+# The greeter is a minimal GNOME session; its logo is a dconf key, not a file
+# name. The `branding` role owns the image; this role names it where the greeter
+# reads it. Debian documents `/etc/gdm3/greeter.dconf-defaults` and a GDM reload.
+- name: GDM's own logo is declared
+  ansible.builtin.lineinfile:
+    path: "{{ display_manager_greeter_defaults }}"
+    regexp: '^logo=.*$'
+    line: "logo='{{ display_manager_logo }}'"
+    insertafter: '^\[org/gnome/login-screen\]'
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart GDM
+
+- name: The GDM logo is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: grep -F "logo='{{ display_manager_logo }}'" {{ display_manager_greeter_defaults }}
+  register: display_logo_declared
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The login screen names the product's mark
+  ansible.builtin.assert:
+    that:
+      - display_logo_declared.rc == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ display_manager_greeter_defaults }}` does
+      not name `{{ display_manager_logo }}`; the greeter would show its own
+      default. The file the key points at is installed by the `branding` role.
+  when: not ansible_check_mode
+
+# The greeter is a GNOME session: `org/gnome/desktop/background` is the same key
+# the desktop uses. The file the `branding` role installs is named here; the
+# colour is what shows behind it and on a display that cannot draw the picture.
+- name: GDM's background is declared
+  ansible.builtin.blockinfile:
+    path: "{{ display_manager_greeter_defaults }}"
+    marker: "# {mark} ANSIBLE MANAGED: Workstation greeter background"
+    block: |
+      [org/gnome/desktop/background]
+      picture-uri='file://{{ display_manager_wallpaper }}'
+      picture-uri-dark='file://{{ display_manager_wallpaper }}'
+      picture-options='zoom'
+      color-shading-type='solid'
+      primary-color='{{ display_manager_background_color }}'
+      secondary-color='{{ display_manager_background_color }}'
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart GDM
+
+- name: The autologin is declared
+  ansible.builtin.template:
+    src: 90-workstation-autologin.conf.j2
+    dest: "{{ display_manager_config_dir }}/90-workstation-autologin.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when: display_manager_autologin | bool
+  notify: Restart GDM
+
+- name: An autologin the site no longer wants is withdrawn
+  ansible.builtin.file:
+    path: "{{ display_manager_config_dir }}/90-workstation-autologin.conf"
+    state: absent
+  when: not display_manager_autologin | bool
+  notify: Restart GDM
+
+# The alias is the package's: `gdm.service` carries `[Install]
+# Alias=display-manager.service`, and its maintainer script enables it. Creating
+# the symlink here would be a second writer of the same link -- exactly the
+# hand-made alias this product forbids.
+- name: GDM is enabled and started through its own unit
+  ansible.builtin.systemd_service:
+    name: "{{ display_manager_service }}"
+    enabled: true
+    # Enabling alone does not start the seat: on a machine converted from a
+    # text console the package leaves GDM inactive, and the read-back below
+    # would fail (measured on the proof host, 2026-10-26). Starting it here also
+    # means the handler's restart acts on a running unit.
+    state: started
+  when: not ansible_check_mode
+
+# Read back, not assumed. Two facts, both from systemd: the alias resolves to
+# GDM (`Id=` of the unit `display-manager.service` names), and GDM's unit is
+# active -- `static` is the right state for a unit an alias starts, so the
+# READINESS of the seat is what proves the alias is wired.
+- name: The display seat is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl show -p Id -p ActiveState {{ display_manager_alias }}
+  register: display_alias_state
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The seat belongs to GDM
+  ansible.builtin.assert:
+    that:
+      - "'Id=' ~ display_manager_service in display_alias_state.stdout"
+      - "'ActiveState=' in display_alias_state.stdout"
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ display_manager_alias }}` does not resolve
+      to {{ display_manager_service }}. Read back:
+      {{ display_alias_state.stdout }}. GDM's own package creates the alias; do
+      not create it by hand.
+  when: not ansible_check_mode
+
+# A display manager that is not running is a seat nothing starts: on a host that
+# was converted from a text console, `graphical.target` alone starts nothing
+# until the alias and the unit are in place, and that is what this reads.
+- name: The display manager is running
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl is-active {{ display_manager_alias }}
+  register: display_active
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: GDM is active
+  ansible.builtin.assert:
+    that:
+      - display_active.stdout | trim == 'active'
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ display_manager_alias }}` is
+      `{{ display_active.stdout | trim }}`. Read `journalctl -u
+      {{ display_manager_service }}`; a seat that does not start is a desktop
+      nobody sees.
+  when: not ansible_check_mode
+
+- name: The default target is read back
+  ansible.builtin.command:
+    cmd: systemctl get-default
+  register: display_default_target
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The host boots to the desktop
+  ansible.builtin.assert:
+    that:
+      - display_default_target.stdout | trim == 'graphical.target'
+    fail_msg: >-
+      {{ inventory_hostname }} boots to `{{ display_default_target.stdout | trim }}`,
+      so GDM never starts. The `hardening` role declares
+      `hardening_default_target: graphical.target`; converge it.
+  when: not ansible_check_mode

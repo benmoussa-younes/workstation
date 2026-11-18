@@ -1,0 +1,242 @@
+---
+# The declared tuning, shared with the Server collection: the same values and
+# the same D-Bus provider. Every value is a choice, and the role proves the
+# declaration reached the running kernel by reading the keys back.
+# It declares `vm.*` only and asserts the hardening file's keys are untouched.
+
+- name: The host uses systemd
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.service_mgr == 'systemd'
+    fail_msg: "{{ inventory_hostname }} does not use systemd."
+
+- name: The tuning is declared
+  ansible.builtin.template:
+    src: sysctl-performance.conf.j2
+    dest: "{{ performance_sysctl_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the kernel settings
+
+- name: The declared keys are read back
+  # The template above is SIMULATED in check mode, so the file does not exist
+  # there: reading it would fail. Read and assert only where the file is real.
+  ansible.builtin.command:
+    cmd: grep -hoE '^[a-z0-9_.]+' {{ performance_sysctl_file }}
+  register: performance_keys
+  changed_when: false
+  when: not ansible_check_mode
+
+# Sysctl precedence is by file name, not play order. If this file ever declared
+# a `net.*`/`kernel.*` key it would quietly fight `60-hardening.conf` and one of
+# them would be wrong without anyone seeing it.
+- name: The tuning never touches a hardening key
+  ansible.builtin.assert:
+    that:
+      - >-
+        (performance_keys.stdout_lines | select('match', '^vm[.]') | list | length)
+        == (performance_keys.stdout_lines | length)
+    fail_msg: >-
+      {{ performance_sysctl_file }} declares a key outside `vm.*`: it would
+      collide with another role's settings.
+  when: not ansible_check_mode
+
+- name: A congestion control other than bbr is assumed in the kernel
+  # Only bbr has a module this role knows how to name. Anything else is left to
+  # the kernel, which is what the empty default (cubic on the current Debian release) means.
+  ansible.builtin.assert:
+    that:
+      - performance_tcp_congestion_control in ['', 'bbr', 'cubic', 'reno']
+    fail_msg: >-
+      {{ inventory_hostname }}: performance_tcp_congestion_control must be
+      empty, `bbr`, `cubic` or `reno`.
+
+- name: The network tuning is declared
+  ansible.builtin.template:
+    src: sysctl-performance-network.conf.j2
+    dest: "{{ performance_network_sysctl_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the kernel settings
+
+- name: The network tuning keys are read back
+  ansible.builtin.command:
+    cmd: grep -hoE '^[a-z0-9_.]+' {{ performance_network_sysctl_file }}
+  register: performance_network_keys
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The network tuning stays in net.*
+  ansible.builtin.assert:
+    that:
+      - performance_network_keys.stdout_lines | length > 0
+      - >-
+        (performance_network_keys.stdout_lines | select('match', '^net[.]') | list | length)
+        == (performance_network_keys.stdout_lines | length)
+    fail_msg: >-
+      {{ performance_network_sysctl_file }} declares a key outside `net.*`: the
+      VM and security namespaces belong to the files that own them.
+  when: not ansible_check_mode
+
+- name: The chosen congestion control module is loaded at boot
+  # `sysctl --system` runs after `systemd-modules-load`, so a module named here
+  # exists by the time the value is written.
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible; do not edit.
+      # SPDX-License-Identifier: AGPL-3.0-or-later
+      {{ performance_tcp_congestion_control }}
+    dest: "{{ performance_modules_load_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - performance_tcp_congestion_control == 'bbr'
+
+- name: The boot module list is absent when no module is chosen
+  ansible.builtin.file:
+    path: "{{ performance_modules_load_file }}"
+    state: absent
+  when:
+    - performance_tcp_congestion_control != 'bbr'
+
+- name: The chosen congestion control is loaded now
+  ansible.builtin.command:
+    cmd: /sbin/modprobe {{ performance_tcp_congestion_control }}
+  changed_when: false
+  when:
+    - performance_tcp_congestion_control == 'bbr'
+    - not ansible_check_mode
+
+- name: Transparent huge pages are declared
+  ansible.builtin.template:
+    src: thp-performance.conf.j2
+    dest: "{{ performance_tmpfiles_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the tmpfiles
+
+- name: The declared settings are applied now
+  ansible.builtin.meta: flush_handlers
+
+# A VM has no cpufreq interface; asserting a governor there is a false failure.
+# Detect and skip cleanly. On bare metal, assert — never write — so the role
+# reports drift instead of fighting whatever set the governor.
+- name: The CPU frequency interface is present
+  ansible.builtin.stat:
+    path: "{{ performance_cpufreq_path }}"
+  register: performance_cpufreq
+
+- name: The governor is read
+  ansible.builtin.slurp:
+    src: "{{ performance_cpufreq_path }}"
+  register: performance_governor
+  when: performance_cpufreq.stat.exists
+
+- name: The governor is reported
+  # No declared governor: the machine keeps its own, and the role says which one
+  # it is so a drift is visible without failing a correct host.
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: governor
+      {{ performance_governor.content | b64decode | trim }}
+      (none declared; set `performance_cpu_governor` to make it a checked
+      property).
+  when:
+    - performance_cpufreq.stat.exists
+    - performance_cpu_governor | length == 0
+
+- name: The governor is the declared one
+  ansible.builtin.assert:
+    that:
+      - (performance_governor.content | b64decode | trim) == performance_cpu_governor
+    fail_msg: >-
+      {{ inventory_hostname }} runs
+      {{ performance_governor.content | b64decode | trim }}, not the declared
+      {{ performance_cpu_governor }}.
+  when:
+    - performance_cpufreq.stat.exists
+    - performance_cpu_governor | length > 0
+
+- name: No CPU frequency interface is a clean skip
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: no cpufreq interface (a VM); nothing to assert."
+  when: not performance_cpufreq.stat.exists
+
+- name: The observing tools are present
+  ansible.builtin.apt:
+    name: "{{ performance_observe_packages }}"
+    state: present
+    cache_valid_time: 3600
+  when: performance_observe_packages | length > 0
+
+# The D-Bus provider. Installing `dbus-broker` ships only `dbus-broker.service`;
+# Debian's `dbus` package keeps owning `/usr/lib/systemd/system/dbus.service`,
+# whose `ExecStart` names `dbus-daemon`. The unit's own `[Install]` declares
+# `Alias=dbus.service`, so the package postinst creates `/etc/systemd/user/
+# dbus.service` for the user manager (measured: `deb-systemd-helper --user
+# enable`), and the role declares the system alias explicitly. Without the
+# alias the daemon keeps running and the claim in the documentation would be
+# false. Both aliases take effect at the next boot (system bus) and the next
+# login (user bus).
+- name: The chosen D-Bus provider is present
+  ansible.builtin.apt:
+    name: "{{ 'dbus-broker' if performance_dbus_provider == 'broker' else 'dbus' }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The provider override is read before it is changed
+  ansible.builtin.stat:
+    path: "{{ performance_dbus_override }}"
+  register: performance_dbus_override_before
+
+- name: The override aliases dbus.service to the broker when it is chosen
+  # The alias goes to `dbus-broker.service`, NOT to `/dev/null`: masking the
+  # unit would leave the system bus with no provider at all. Upstream ships the
+  # same alias, and the Debian package expects it (measured on Debian:
+  # `dbus-broker` carries no `dbus.service`, and `dbus` owns the daemon one).
+  ansible.builtin.file:
+    src: /usr/lib/systemd/system/dbus-broker.service
+    dest: "{{ performance_dbus_override }}"
+    state: link
+    force: true
+  when: performance_dbus_provider == 'broker'
+  notify: Reload systemd
+
+- name: A stale override is removed when the daemon is chosen
+  ansible.builtin.file:
+    path: "{{ performance_dbus_override }}"
+    state: absent
+  when:
+    - performance_dbus_provider == 'daemon'
+    - performance_dbus_override_before.stat.exists | default(false)
+  notify: Reload systemd
+
+- name: The provider override is read back
+  # Read AFTER the change: an assert on a pre-change fact would fail the first
+  # run of a machine that is being brought to the chosen provider.
+  ansible.builtin.stat:
+    path: "{{ performance_dbus_override }}"
+  register: performance_dbus_override_stat
+
+- name: The configured provider is the chosen one
+  # A post-condition on a real change. In check mode the `file` task above only
+  # reports what it would do, so the override is still absent and asserting on
+  # it would fail a correct dry run -- the same defect the backup and hardening
+  # timers had. The intent is already visible in the diff; the assert runs where
+  # it can be true.
+  ansible.builtin.assert:
+    that:
+      - >-
+        (performance_dbus_provider == 'broker'
+         and performance_dbus_override_stat.stat.exists | default(false))
+        or (performance_dbus_provider == 'daemon'
+            and not (performance_dbus_override_stat.stat.exists | default(false)))
+    fail_msg: >-
+      {{ inventory_hostname }}: the D-Bus override does not match
+      `performance_dbus_provider` ({{ performance_dbus_provider }}). Switching
+      takes effect at the next boot.
+  when: not ansible_check_mode

@@ -1,0 +1,44 @@
+---
+# The GNOME software base.
+#
+# `gnome-core` is the decided package set: Debian's own definition of the GNOME
+# desktop (the shell, GDM, the core applications, PipeWire audio, CUPS) and
+# nothing a later decision has to undo. The applications, fonts and themes are
+# decided elsewhere -- this role does not add a package "just in case".
+#
+# GNOME is the product's only desktop: there is no second edition to select.
+gnome_packages:
+  - gnome-core
+  - task-gnome-desktop
+# `task-gnome-desktop` is `task-desktop` (xserver-xorg) plus `gnome-core`. The
+# xserver is not the session -- GDM picks Wayland and GNOME runs on
+# `gnome-shell` -- but it is what RDP, VNC and X11 clients connect to, and it is
+# the only way to test a session over a network.
+
+# Debian's `gnome-core` depends on `evince | papers` and `totem | showtime`;
+# apt resolves the first alternative, so the OLDER pair arrives. The product
+# pins the CURRENT GNOME pair before the meta-package, so the alternatives are
+# satisfied by Papers and Showtime, then retires Evince and Totem.
+gnome_document_viewer: papers
+gnome_video_player: showtime
+gnome_retired_document_viewer: evince
+gnome_retired_video_player: totem
+
+# The desktop session must be Wayland. This is a property of the product, not a
+# preference, so it is a variable with one value: a session read on X11 is a
+# defect this role refuses at the end of its run.
+gnome_session_type: wayland
+
+# Install Recommends for the desktop. True: Debian's desktop task is what it is,
+# except for the viewer pair pinned above, which the product decides itself.
+gnome_install_recommends: true
+
+# GDM reads its dconf defaults from a profile shipped by `gdm3`; the
+# `display` role owns the display manager itself. This role owns the parts of
+# GNOME that are not GDM: the session's portal backends and the `gnome-shell`
+# extensions Debian's GNOME needs on a Wayland session (none are added: the
+# shell ships them).
+#
+# After the packages: the session is a property of the running system. GDM's
+# configuration is the `display` role's file; this role only requires the
+# Wayland session definition to exist and the shell to answer.

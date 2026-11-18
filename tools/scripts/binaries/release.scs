@@ -1,0 +1,153 @@
+#!/usr/bin/scripts run
+# release.scs — build the release assets from a signed tag.
+#
+#   scripts run tools/scripts/binaries/release.scs
+#   scripts run tools/scripts/binaries/release.scs --sign
+#   RELEASE_GPG_KEY=<fingerprint> scripts run ... --sign
+#
+# The tag is a release-manager decision, not a side effect of this script:
+#
+#   git tag -s "v$(cat VERSION)" -m "Workstation Edition $(cat VERSION)"
+#
+# The script refuses an unclean tree, a missing tag, an unsigned tag or a tag
+# that is not `v<VERSION>`. It writes only under `dist/`.
+
+import "../modules/repo.scs" as repo
+import "../modules/verdict.scs" as verdict
+
+let root: path = repo.root_path_from(process.script_path())
+let mutable sign = false
+let mutable ci = false
+for argument in process.arguments() {
+    if argument == "--sign" {
+        sign = true
+    } else if argument == "--ci" {
+        ci = true
+    } else {
+        io.write_standard_error_line("usage: release.scs [--sign|--ci]")
+        process.exit_with_code(2)
+    }
+}
+if ci and sign {
+    io.write_standard_error_line("release: --ci and --sign are exclusive")
+    process.exit_with_code(2)
+}
+
+function stop(message: string) -> unit {
+    io.write_standard_error_line("release: " + message)
+    io.write_standard_output_line(verdict.line(false))
+    process.exit_with_code(1)
+}
+
+function command(root: path, program: string, arguments: list<string>) -> process_result {
+    return command_in(root, program, arguments)
+}
+
+function command_in(directory: path, program: string, arguments: list<string>) -> process_result {
+    match process.run(process.request(program, arguments).with_working_directory(directory)) {
+        ok(completed) => {
+            return completed
+        }
+        error(failure) => {
+            io.write_standard_error_line("release: cannot run {program}: {failure.kind}")
+            io.write_standard_output_line(verdict.line(false))
+            process.exit_with_code(1)
+        }
+    }
+}
+
+let mutable version = ""
+match filesystem.read_file(root / "VERSION") {
+    ok(content) => {
+        version = content.trim_whitespace()
+    }
+    error(failure) => {
+        stop("cannot read VERSION: {failure.kind}")
+    }
+}
+if not version.matches(r"^[0-9]+\.[0-9]+\.[0-9]+$").value_or(false) {
+    stop("VERSION `{version}` is not MAJOR.MINOR.PATCH")
+}
+
+let status = command(root, "git", ["status", "--porcelain"])
+if status.standard_output.trim_whitespace().length() > 0 {
+    stop("the working tree is not clean")
+}
+
+let tag = "v" + version
+if ci {
+    io.write_standard_output_line("CI: the tag is verified by the workflow (`TAG` = `v{version}`)")
+} else {
+    let tag_lookup = command(root, "git", ["rev-parse", "-q", "--verify", "refs/tags/{tag}"])
+    if tag_lookup.exit_code != 0 {
+        stop("the signed tag `{tag}` does not exist")
+    }
+    let tag_check = command(root, "git", ["verify-tag", tag])
+    if tag_check.exit_code != 0 {
+        stop("`git verify-tag {tag}` refused the tag")
+    }
+}
+
+let dist = root / "dist"
+if not filesystem.path_exists(dist) {
+    match filesystem.make_directory_tree(dist) {
+        ok(_) => {}
+        error(failure) => {
+            stop("cannot create dist/: {failure.kind}")
+        }
+    }
+}
+
+let namespace = "benmoussa"
+let name = "workstation"
+let collection_name = "{namespace}-{name}-{version}.tar.gz"
+let source_name = "{name}-{version}-src.tar.gz"
+
+let build = command(root, "ansible-galaxy", ["collection", "build", "--output-path", dist.to_string()])
+if build.exit_code != 0 {
+    stop("ansible-galaxy collection build: {build.standard_error.trim_whitespace()}")
+}
+
+let archive = command(root, "git", ["archive", "--format=tar.gz", "--prefix={name}-{version}/", "-o", (dist / source_name).to_string(), "HEAD"])
+if archive.exit_code != 0 {
+    stop("git archive: {archive.standard_error.trim_whitespace()}")
+}
+
+let checksums = command_in(dist, "sha256sum", [collection_name, source_name])
+if checksums.exit_code != 0 {
+    stop("sha256sum: {checksums.standard_error.trim_whitespace()}")
+}
+match filesystem.write_file_overwrite(checksums.standard_output, dist / "SHA256SUMS") {
+    ok(_) => {}
+    error(failure) => {
+        stop("cannot write SHA256SUMS: {failure.kind}")
+    }
+}
+
+if sign {
+    let mutable key = ""
+    match environment.get_variable("RELEASE_GPG_KEY") {
+        ok(value) => {
+            key = value
+        }
+        error(failure) => {
+            stop("RELEASE_GPG_KEY is not set")
+        }
+    }
+    match process.run(process.request("gpg", ["--armor", "--detach-sign", "--local-user", key, "SHA256SUMS"]).with_working_directory(dist)) {
+        ok(completed) => {
+            if completed.exit_code != 0 {
+                stop("gpg: {completed.standard_error.trim_whitespace()}")
+            }
+        }
+        error(failure) => {
+            stop("cannot run gpg: {failure.kind}")
+        }
+    }
+}
+
+io.write_standard_output_line("RELEASE {tag}: dist/{collection_name}, dist/{source_name}, dist/SHA256SUMS")
+if sign {
+    io.write_standard_output_line("SIGNATURE: dist/SHA256SUMS.asc")
+}
+io.write_standard_output_line(verdict.line(true))

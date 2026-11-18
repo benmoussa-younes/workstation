@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The theme the running system starts. The initramfs carries a copy compiled from
+# this value (see the handler that rebuilds it), so a theme selected here and a
+# splash seen at boot are the same thing only if the initramfs was rebuilt.
+[Daemon]
+Theme={{ plymouth_theme_name }}
+ShowDelay=0

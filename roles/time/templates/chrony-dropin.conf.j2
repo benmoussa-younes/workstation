@@ -1,0 +1,56 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This product's additions to Debian's chrony configuration.
+#
+# This is a DROP-IN under `confdir /etc/chrony/conf.d`, which Debian's stock
+# `/etc/chrony/chrony.conf` includes. The stock file is deliberately NOT
+# overwritten -- it carries `confdir`, `sourcedir` (the DHCP sources and
+# sources.d), `keyfile`, `driftfile`, `ntsdumpdir`, `logdir`, `maxupdateskew`,
+# `leapseclist`, `rtcsync` and `makestep`, and dropping any of them is a silent
+# regression (the leap-second source and the DHCP sources disappear, and
+# `maxupdateskew` loosens to 1000 ppm). If the stock file ever loses `confdir`,
+# the role fails loudly rather than serving nothing.
+#
+# Only the serving-specific additions live here.
+#
+# Additional upstream pools, ADDED to the distribution's. Empty uses Debian's
+# pool alone; a drop-in cannot remove the stock `pool` line.
+{% for pool in time_upstream_pools %}
+pool {{ pool }} iburst
+{% endfor %}
+
+# Serve the declared subnet, and only it. chrony already refuses every client by
+# default, so naming the subnet is the whole access-control statement.
+allow {{ time_subnet }}
+
+# Do not answer a flood: per-source rate limiting (chrony 4.6 supports it).
+ratelimit interval {{ time_ratelimit_interval }} burst {{ time_ratelimit_burst }}
+
+# STEP a large offset, at any time -- not only during the first updates.
+#
+# Measured on a converted host, 2026-10-07: after the host suspends and resumes, the VMs'
+# clocks jump (one secondary was 111 s behind), and Debian's stock
+# `makestep 1.0 3` -- "step during the first three updates after start" -- NEVER
+# corrects it, because those three updates are long past: chrony keeps a
+# two-minute error for ever and reports `Leap status: Not synchronised`. That is
+# not a cosmetic detail here: TSIG carries a timestamp, and a node outside the
+# acceptance window fails EVERY zone transfer with BADTIME. `-1` means "no
+# update-count limit", so this product heals itself after a suspend, an outage or a
+# long freeze. A drop-in cannot remove the stock line, so this one wins by being
+# read later (`confdir` includes the drop-ins in sorted order).
+makestep 1.0 -1
+
+# No remote `chronyc`: the command port answers nobody. The Unix command socket
+# stays, so `sudo chronyc` on the host still works -- which is what the checks
+# and the operator use.
+cmdport {{ time_command_port }}
+
+# Keep the tracking log. Without a `log` line the distribution's `logdir` writes
+# nothing at all -- a silent trap. `logdir /var/log/chrony` is the stock value.
+log tracking statistics
+{% if time_interface %}
+
+# Bind the NTP socket to this product's interface (defence in depth).
+binddevice {{ time_interface }}
+{% endif %}

@@ -1,0 +1,115 @@
+---
+argument_specs:
+  main:
+    short_description: The server's tuning, declared.
+    description:
+      - Declares the VM, I/O and TCP tuning and detects the CPU frequency
+        interface (skipped on a VM). The size of the swap is the site's day-0
+        decision and is neither created nor checked here.
+    author: Younes BENMOUSSA
+    options:
+      performance_sysctl_file:
+        type: str
+        required: false
+        description: The sysctl drop-in (sorts before the hardening file).
+      performance_tmpfiles_file:
+        type: str
+        required: false
+        description: The tmpfiles drop-in that sets THP.
+      performance_swap_kind:
+        type: str
+        required: false
+        description: >-
+          The kind of swap the host has. `disk` is a partition or file on a
+          disk; `none` declares no swap. zram is not implemented in this release.
+        choices: [disk, none]
+      performance_swappiness:
+        type: int
+        required: false
+        description: vm.swappiness for the declared swap kind (10 for a disk).
+      performance_dirty_background_bytes:
+        type: int
+        required: false
+        description: vm.dirty_background_bytes.
+      performance_dirty_bytes:
+        type: int
+        required: false
+        description: vm.dirty_bytes.
+      performance_dirty_expire_centisecs:
+        type: int
+        required: false
+        description: vm.dirty_expire_centisecs.
+      performance_dirty_writeback_centisecs:
+        type: int
+        required: false
+        description: vm.dirty_writeback_centisecs.
+      performance_vfs_cache_pressure:
+        type: int
+        required: false
+        description: vm.vfs_cache_pressure.
+      performance_thp:
+        type: str
+        required: false
+        description: The transparent huge page mode.
+        choices: [always, madvise, never]
+      performance_network_sysctl_file:
+        type: str
+        required: false
+        description: The `net.*` tuning drop-in, separate from the hardening file.
+      performance_tcp_congestion_control:
+        type: str
+        required: false
+        description: >-
+          The congestion control to load and declare; empty leaves the kernel's
+          choice. `bbr` also writes `net.core.default_qdisc = fq` and loads the
+          module at boot.
+      performance_modules_load_file:
+        type: str
+        required: false
+        description: Where a chosen congestion-control module is loaded at boot.
+      performance_tcp_fastopen:
+        type: int
+        required: false
+        description: net.ipv4.tcp_fastopen (3 enables client and server).
+      performance_tcp_slow_start_after_idle:
+        type: int
+        required: false
+        description: net.ipv4.tcp_slow_start_after_idle.
+      performance_tcp_mtu_probing:
+        type: int
+        required: false
+        description: net.ipv4.tcp_mtu_probing.
+      performance_netdev_max_backlog:
+        type: int
+        required: false
+        description: net.core.netdev_max_backlog.
+      performance_cpu_governor:
+        type: str
+        required: false
+        description: >-
+          The governor checked on bare metal. Empty keeps the machine's own and
+          reports it instead: a governor set deliberately is not drift.
+      performance_cpufreq_path:
+        type: str
+        required: false
+        description: The governor path; absent on a VM.
+      performance_observe_packages:
+        type: list
+        elements: str
+        required: false
+        description: The tools the role observes with; empty declares it off.
+          - ethtool
+      performance_dbus_override:
+        type: str
+        required: false
+        description: The override the D-Bus package creates.
+      performance_dbus_provider:
+        type: str
+        required: false
+        description: >-
+          The D-Bus provider. `broker` overrides `dbus.service` with
+          `dbus-broker.service` for the system bus and the systemd user
+          manager; `daemon` keeps Debian's bus and is the rollback. The
+          `dbus-daemon` binary stays installed either way: the accessibility
+          bus and `dbus-run-session` use it.
+        choices: [broker, daemon]

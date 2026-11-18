@@ -1,0 +1,44 @@
+---
+# CUPS and the virtual PDF queue.
+#
+# The queue is the only printer this product declares: a physical printer is site
+# data (an address, a model, a driver) and the product invents none. The PDF queue
+# needs no hardware, and it is what makes "print to file" work from every
+# application.
+#
+# Debian renames the driver. The binary package is
+# `printer-driver-cups-pdf`; there is NO `cups-pdf` binary in the current Debian release (measured
+# 2026-10-26: `apt-cache policy cups-pdf` finds no candidate, `apt-cache madison`
+# shows `cups-pdf` only as the SOURCE package, and `apt-cache search cups-pdf`
+# answers `printer-driver-cups-pdf`).
+printing_packages:
+  - cups
+  - cups-filters               # the filters a PPD queue needs (pdftops, texttopdf)
+  - printer-driver-cups-pdf    # the PDF backend and its two PPDs
+
+printing_service: cups
+
+# The PDF queue, declared. `-E` (enabled) and accepting are part of the
+# declaration: a queue that exists and refuses jobs is not a queue.
+printing_manage_pdf_queue: true
+printing_pdf_queue: PDF
+printing_pdf_device: "cups-pdf:/"
+
+# The PPD the queue uses. The package ships two -- `CUPS-PDF_opt.ppd`
+# (`*NickName: "Generic CUPS-PDF Printer (w/ options)"`) and `_noopt` -- and the
+# reference workstation's queue uses the `_opt` one (its `/etc/cups/ppd/PDF.ppd`
+# is 22243 bytes, byte-identical to this file). It is passed with `-P`, the option
+# that takes a PPD FILE; `-m` takes a model name from CUPS's model directory,
+# which does not contain this PPD.
+printing_pdf_ppd: /usr/share/ppd/cups-pdf/CUPS-PDF_opt.ppd
+
+# The queue's server-side defaults. `pdftops-renderer-default=pdftocairo` is what
+# `printer-driver-cups-pdf`'s README.Debian recommends, and what the reference
+# queue carries (`Option pdftops-renderer pdftocairo` in `printers.conf`).
+printing_pdf_options:
+  - pdftops-renderer-default=pdftocairo
+
+# How long to wait for the scheduler's socket after starting it. `lpstat` is what
+# waits: until it answers, every other printing command fails with "no such file".
+printing_scheduler_retries: 12
+printing_scheduler_delay: 2

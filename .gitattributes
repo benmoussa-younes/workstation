@@ -1,0 +1,4 @@
+# Normalise the text files and keep the binary assets binary.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

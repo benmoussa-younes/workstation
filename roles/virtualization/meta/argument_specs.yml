@@ -1,0 +1,115 @@
+---
+argument_specs:
+  main:
+    short_description: The optional local virtualization stack.
+    description:
+      - >-
+        Installs and configures libvirt, virt-manager and rootless Podman for
+        one existing human account: packages, user groups, the local libvirt
+        socket, the default NAT network, the default storage pool, the rootless
+        Podman socket and subordinate IDs. It creates no virtual machine and no
+        container, and it opens no remote libvirt connection. The `libvirt`
+        group is root-equivalent: keep the role disabled or override
+        `virtualization_groups` when that is not acceptable.
+    author: Younes BENMOUSSA
+    options:
+      virtualization_enabled:
+        type: bool
+        required: false
+        description: Whether the stack is selected. False installs nothing.
+      virtualization_user:
+        type: str
+        required: false
+        description: The existing account that owns libvirt and rootless Podman. Never root.
+      virtualization_packages:
+        type: list
+        elements: str
+        required: false
+        description: The Debian packages the libvirt/virt-manager stack needs.
+      virtualization_libvirt_service:
+        type: str
+        required: false
+        description: The libvirt service to enable and start.
+      virtualization_groups:
+        type: list
+        elements: str
+        required: false
+        description: The groups the human account joins.
+      virtualization_default_network:
+        type: str
+        required: false
+        description: The libvirt network started and autostarted.
+      virtualization_default_network_definition:
+        type: str
+        required: false
+        description: The XML definition of the default network.
+      virtualization_storage_pool:
+        type: str
+        required: false
+        description: The libvirt storage pool started and autostarted.
+      virtualization_storage_pool_path:
+        type: str
+        required: false
+        description: The directory behind the default storage pool.
+      virtualization_podman_enabled:
+        type: bool
+        required: false
+        description: Whether the rootless Podman engine is part of the bundle.
+      virtualization_podman_user:
+        type: str
+        required: false
+        description: The account that owns the rootless Podman engine.
+      virtualization_podman_packages:
+        type: list
+        elements: str
+        required: false
+        description: The Debian packages the Podman engine needs.
+      virtualization_podman_registries:
+        type: list
+        elements: str
+        required: false
+        description: The registries an unqualified image name searches.
+      virtualization_podman_registries_dir:
+        type: str
+        required: false
+        description: The registries.conf.d directory.
+      virtualization_podman_registries_file:
+        type: str
+        required: false
+        description: The drop-in that declares the registry search path.
+      virtualization_podman_containers_dir:
+        type: str
+        required: false
+        description: The containers.conf.d directory.
+      virtualization_podman_containers_file:
+        type: str
+        required: false
+        description: The drop-in that declares the engine settings.
+      virtualization_podman_socket_enabled:
+        type: bool
+        required: false
+        description: Whether the rootless user socket is enabled.
+      virtualization_podman_linger:
+        type: bool
+        required: false
+        description: Whether the user manager runs without an active login.
+      virtualization_podman_subuid_start:
+        type: int
+        required: false
+        description: The first subordinate UID/GID of the account.
+      virtualization_podman_subuid_count:
+        type: int
+        required: false
+        description: The number of subordinate UIDs/GIDs.
+      virtualization_podman_subuid_end:
+        type: str
+        required: false
+        description: The last subordinate UID/GID, derived from the start and count.
+      virtualization_podman_verify:
+        type: bool
+        required: false
+        description: Whether the role reads the Podman engine back.
+      virtualization_verify:
+        type: bool
+        required: false
+        description: Whether the role reads the libvirt state back.

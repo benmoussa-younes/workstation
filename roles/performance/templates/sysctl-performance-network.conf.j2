@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The network stack's declared tuning. It sorts AFTER `50-performance.conf` and
+# BEFORE `60-hardening.conf`: a key both this file and the hardening file ever
+# named would resolve to the security value. The role asserts this file
+# declares `net.*` only, and that neither file re-declares the other's keys.
+#
+# Every value here is a measured or documented choice, not a copied "sysctl
+# tweak": the publishable win on this product's wireless host was the radio's
+# power save (see the `network` role), not the congestion control.
+
+{% if performance_tcp_congestion_control | length > 0 %}
+# The site chose a congestion control: `fq` is the pacing qdisc its own
+# documentation asks for, and the module is loaded before `sysctl --system`
+# runs at boot.
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = {{ performance_tcp_congestion_control }}
+{% endif %}
+
+# Send data in the SYN once the peer has a cookie, and accept a peer's.
+net.ipv4.tcp_fastopen = {{ performance_tcp_fastopen }}
+
+# A connection that went idle keeps its cwnd instead of re-entering slow start.
+net.ipv4.tcp_slow_start_after_idle = {{ performance_tcp_slow_start_after_idle }}
+
+# Find the path MTU instead of black-holing the packets that exceed it.
+net.ipv4.tcp_mtu_probing = {{ performance_tcp_mtu_probing }}
+
+# Room for a burst: a 1 Gbit/s radio with frame aggregation outruns 1000 slots.
+net.core.netdev_max_backlog = {{ performance_netdev_max_backlog }}

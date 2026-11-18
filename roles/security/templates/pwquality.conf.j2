@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The audit found no password policy at all: no pwquality, PASS_MAX_DAYS 99999,
+# PASS_MIN_DAYS 0. This applies whenever a password is set — on a site whose
+# accounts are key-only, that means "when a human deliberately creates one".
+minlen = {{ security_password_min_length }}
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+minclass = 3
+maxrepeat = 3
+{% if security_password_reject_userinfo | bool %}
+usercheck = 1
+{% endif %}

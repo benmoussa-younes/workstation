@@ -1,0 +1,13 @@
+# Managed by Ansible; do not edit.
+#
+# The application-grid folders. `folder-children` names the folders; each
+# `folder:<id>` section declares its label and the desktop ids it contains. The
+# ids come from the `applications` role's packages; the shell hides an empty
+# folder, so a site that removes a package does not leave a dead group.
+[org/gnome/desktop/app-folders]
+folder-children=[{% for folder in dconf_app_folders %}'{{ folder.id }}'{% if not loop.last %}, {% endif %}{% endfor %}]
+{% for folder in dconf_app_folders %}
+[org/gnome/desktop/app-folders/folder:{{ folder.id }}]
+name='{{ folder.name }}'
+apps=[{% for app in folder.apps %}'{{ app }}'{% if not loop.last %}, {% endif %}{% endfor %}]
+{% endfor %}

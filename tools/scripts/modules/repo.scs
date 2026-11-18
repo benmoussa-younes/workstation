@@ -1,0 +1,6 @@
+#!/usr/bin/scripts run
+# repo.scs — where the repository root is, from a script under tools/scripts.
+
+public function root_path_from(script: path) -> path {
+    return script.parent().parent().parent().parent()
+}

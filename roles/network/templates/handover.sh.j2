@@ -1,0 +1,137 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Hand the link over to NetworkManager.
+#
+# The order is the safety property, and this script is written so that every
+# failure before the last step leaves the host exactly as it found it:
+#
+#   1. the profile NetworkManager is to adopt is written with the address and the
+#      gateway the host has NOW, and it is ordered BEFORE the profiles another
+#      tool wrote for the same device (`autoconnect-priority`, and the priority
+#      profile below). A profile that loses the activation race is the defect
+#      measured on the bench, 2026-10-25: an image left `Wired connection 1`
+#      (DHCP, higher priority) active, so the adopted profile with the address
+#      was never tried;
+#   2. NetworkManager starts and is asked to activate the adopted profile on the
+#      device. The wait is for the DEVICE to report connected AND for the default
+#      route to be back -- a device that is connected with no route is not a link
+#      anyone can use;
+#   3. only then is the previous stack retired: the declaration renamed (never
+#      deleted), the unit disabled and masked. Before that point nothing that was
+#      carrying the caller has been taken away;
+#   4. the loopback address is the final test: it answers whichever stack owns
+#      the link, so it separates "the interface came back" from "the stack is
+#      gone".
+#
+# A failure at any point before step 3 stops nothing and exits nonzero; the play
+# reads that result.
+set -euo pipefail
+
+device="{{ network_handover_devices[0] }}"
+address="{{ network_adopted_address_cidr }}"
+gateway="{{ network_adopted_gateway }}"
+profile="{{ network_handover_profile_name }}"
+timeout={{ network_handover_timeout }}
+
+# 1. The declaration this hand-over owns.
+mkdir -p /etc/NetworkManager/system-connections
+cat > "{{ network_handover_profile }}" <<EOF
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The profile the hand-over activates on ${device}. The address and the gateway
+# are the ones the host already had: copied so that the moment the previous owner
+# stops, NetworkManager can take the link over without waiting for a lease.
+#
+# The method stays \`manual\` with the same address on purpose: the hand-over must
+# not change the address the converge session is running on. A site that wants
+# DHCP for this interface declares its own profile with a lower priority.
+[connection]
+id=${profile}
+uuid={{ network_handover_profile_uuid }}
+type=ethernet
+interface-name=${device}
+autoconnect=true
+autoconnect-priority={{ network_handover_profile_priority }}
+
+[ethernet]
+wake-on-lan=ignore
+
+[ipv4]
+method=manual
+address1=${address}
+gateway=${gateway}
+may-fail=false
+
+[ipv6]
+method=auto
+may-fail=true
+EOF
+chmod 0600 "{{ network_handover_profile }}"
+
+systemctl enable NetworkManager.service >/dev/null
+systemctl restart NetworkManager.service
+
+# 2. Activate the declaration, and wait for the link, not for the daemon.
+nmcli connection up "$profile" ifname "$device" >/dev/null 2>&1 || true
+
+waited=0
+while [ "$waited" -lt "$timeout" ]; do
+  if nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep -qx "${device}:connected" \
+     && ip -o -4 route show default 2>/dev/null | grep -q 'default via'; then
+    break
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+
+if ! nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep -qx "${device}:connected" \
+   || ! ip -o -4 route show default 2>/dev/null | grep -q 'default via'; then
+  echo "NetworkManager did not own ${device} within ${timeout}s; the previous owner is left in place." >&2
+  nmcli -t -f DEVICE,STATE device status >&2 || true
+  nmcli -t -f NAME,DEVICE con show --active >&2 || true
+  ip -o -4 route show >&2 || true
+  exit 1
+fi
+
+# 3. The previous stack's declaration is retired: `/etc` durably, `/run` because
+# the generator rewrites it at every boot.
+for file in /etc/systemd/network/*.network /run/systemd/network/*.network; do
+  [ -e "$file" ] || continue
+  if grep -qE "^Name=?${device}$" "$file" 2>/dev/null; then
+    case "$file" in
+      /run/*) rm -f "$file" ;;
+      *) mv "$file" "${file}{{ network_netplan_retired_suffix }}" ;;
+    esac
+  fi
+done
+
+# netplan's own files, when the image describes the link with them: cloud-init's
+# file is rewritten at boot, so it is retired in place. Only a file that names
+# this interface is touched; another interface's declaration is not this
+# hand-over's to move.
+for file in {{ network_netplan_dir }}/*.yaml; do
+  [ -e "$file" ] || continue
+  if grep -qE "^[[:space:]]*${device}:" "$file" 2>/dev/null; then
+    mv "$file" "${file}{{ network_netplan_retired_suffix }}"
+  fi
+done
+
+systemctl disable --now systemd-networkd.service
+systemctl disable --now systemd-networkd.socket 2>/dev/null || true
+systemctl mask systemd-networkd.service
+systemctl mask systemd-networkd.socket
+
+# 4. The final tests, on the result.
+sleep 1
+if ! ip -o -4 route show default | grep -q 'default via'; then
+  echo "no default route after the hand-over." >&2
+  ip -o -4 route show >&2 || true
+  exit 1
+fi
+if ! timeout 5 ping -c 1 -W 2 127.0.0.1 >/dev/null 2>&1; then
+  echo "the loopback address does not answer after the hand-over." >&2
+  exit 1
+fi

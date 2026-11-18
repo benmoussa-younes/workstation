@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A oneshot that hands the link over to NetworkManager. It does not run at boot:
+# its only activation is the converge that finds systemd-networkd still owning the
+# link. `RemainAfterExit` keeps its Result readable so the play can report the
+# hand-over's verdict instead of a task's exit code.
+[Unit]
+Description=Hand the link over to NetworkManager
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={{ network_handover_script }}
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

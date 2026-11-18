@@ -1,0 +1,154 @@
+---
+argument_specs:
+  main:
+    short_description: The declared developer tool groups.
+    description:
+      - >-
+        Installs the Debian packages of the selected developer tool groups and
+        reads each one back. The catalogue covers build, debug, clang, dotnet,
+        search, lint, ansible, database, python, network, packaging, bench,
+        test, shell, docs, jre, vscodium and scripts. The `dotnet` group adds
+        Microsoft's official Debian repository for `dotnet-sdk-10.0`; the
+        `vscodium` group adds VSCodium's official repository and installs
+        `codium`; the `scripts` group installs the latest release of the
+        Scripts interpreter from its public GitHub release, after verifying the
+        release's SHA256SUMS. No editor is installed by default; `nano` remains
+        common's editor. There is no LaTeX group: a LaTeX stack is a site
+        choice.
+    author: Younes BENMOUSSA
+    options:
+      developer_tools:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The selected group names. Empty installs nothing; a name outside
+          `developer_tool_groups` fails the run. Removing a group from the list
+          does not uninstall its packages.
+      developer_tool_groups:
+        type: dict
+        required: false
+        description: >-
+          The catalogue of group names and their Debian package lists. The
+          `vscodium` and `scripts` groups are empty because their packages come
+          from their own feeds, handled below. The product's list is in
+          `defaults/main.yml`; a site that overrides it owns the package names
+          it adds.
+      developer_package_cache_valid_time:
+        type: int
+        required: false
+        description: The apt cache validity in seconds.
+      developer_dotnet_base:
+        type: str
+        required: false
+        description: The base URL of Microsoft's package site.
+      developer_dotnet_os:
+        type: str
+        required: false
+        description: The Debian path segment, derived from the identity role.
+      developer_dotnet_repo_url:
+        type: str
+        required: false
+        description: Microsoft's official .NET repository URL.
+      developer_dotnet_repo_suite:
+        type: str
+        required: false
+        description: The .NET repository suite, taken from the identity role.
+      developer_dotnet_repo_component:
+        type: str
+        required: false
+        description: The .NET repository component (`main`).
+      developer_dotnet_repo_file:
+        type: str
+        required: false
+        description: The apt source file the role writes.
+      developer_dotnet_key_url:
+        type: str
+        required: false
+        description: >-
+          The official `packages-microsoft-prod.deb` that carries the
+          repository key.
+      developer_dotnet_key_checksum:
+        type: str
+        required: false
+        description: The SHA-256 pin of the Microsoft key package.
+      developer_dotnet_key_fingerprint:
+        type: str
+        required: false
+        description: The OpenPGP fingerprint the extracted key must carry.
+      developer_dotnet_key_path:
+        type: str
+        required: false
+        description: Where the Microsoft repository key is installed for apt.
+      developer_dotnet_cache_dir:
+        type: str
+        required: false
+        description: The cache directory for the downloaded key package.
+      developer_dotnet_deb:
+        type: str
+        required: false
+        description: The downloaded `packages-microsoft-prod.deb` path.
+      developer_dotnet_key_source:
+        type: str
+        required: false
+        description: The key file extracted from the Microsoft package.
+
+      developer_vscodium_package:
+        type: str
+        required: false
+        description: The VSCodium package name (`codium`).
+      developer_vscodium_key_url:
+        type: str
+        required: false
+        description: The official VSCodium signing key URL.
+      developer_vscodium_key_checksum:
+        type: str
+        required: false
+        description: The SHA-256 pin of the VSCodium signing key.
+      developer_vscodium_key_fingerprint:
+        type: str
+        required: false
+        description: The OpenPGP fingerprint the VSCodium key must carry.
+      developer_vscodium_key_path:
+        type: str
+        required: false
+        description: Where the VSCodium key is installed for apt.
+      developer_vscodium_repo_url:
+        type: str
+        required: false
+        description: The VSCodium APT repository URL.
+      developer_vscodium_repo_suite:
+        type: str
+        required: false
+        description: The VSCodium APT suite (`vscodium`).
+      developer_vscodium_repo_component:
+        type: str
+        required: false
+        description: The VSCodium APT component (`main`).
+      developer_vscodium_repo_file:
+        type: str
+        required: false
+        description: The apt source file the role writes.
+
+      developer_scripts_version:
+        type: str
+        required: false
+        description: >-
+          The Scripts release to install: `latest` (resolved through the GitHub
+          API) or a pinned version such as `0.1.2`.
+      developer_scripts_repo:
+        type: str
+        required: false
+        description: The GitHub repository that publishes the release.
+      developer_scripts_api:
+        type: str
+        required: false
+        description: The GitHub releases API base URL.
+      developer_scripts_arch:
+        type: str
+        required: false
+        description: The Debian package architecture to download.
+      developer_scripts_cache_dir:
+        type: str
+        required: false
+        description: Where the release package and its checksums are cached.

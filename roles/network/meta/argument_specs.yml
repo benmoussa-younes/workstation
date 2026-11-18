@@ -1,0 +1,182 @@
+---
+argument_specs:
+  main:
+    short_description: The link, owned by NetworkManager.
+    description:
+      - >-
+        Installs and configures NetworkManager as the single owner of the host's
+        links, names the devices it must leave alone, hands its DNS to
+        systemd-resolved, and hands the current link over from systemd-networkd
+        from a detached oneshot -- only after NetworkManager reports the device
+        managed, and with the address the host already had. The result is read
+        back: NetworkManager connected, the default route present, systemd-networkd
+        no longer active or enabled.
+    author: Younes BENMOUSSA
+    options:
+      network_packages:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The packages the role installs. `wpasupplicant` and `wireless-regdb`
+          are Recommends of the daemon a desktop always needs.
+      network_manager_conf_dir:
+        type: str
+        required: false
+        description: The NetworkManager drop-in directory.
+      network_manager_dns_conf:
+        type: str
+        required: false
+        description: The drop-in that declares the resolver NetworkManager hands DNS to.
+      network_manager_dns:
+        type: str
+        required: false
+        description: >-
+          `systemd-resolved` hands the link DNS to the stub the `resolver` role
+          owns; `default` lets NetworkManager rewrite `/etc/resolv.conf` and
+          start a private `dnsmasq`.
+        choices: [systemd-resolved, default]
+      network_wifi_powersave:
+        type: int
+        required: false
+        description: >-
+          The Wi-Fi radio's power saving as the default every profile without
+          its own value inherits: 0 = driver default, 1 = leave the driver
+          alone, 2 = disable, 3 = enable. The product declares `2`; measured on
+          the desktop site (2026-11-11), disabling it lowered the mean round
+          trip from 56.99 ms to 2.35 ms.
+        choices: [0, 1, 2, 3]
+      network_unmanaged_devices:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Interfaces NetworkManager must not manage. A device named here is not
+          brought up by a second stack: it stays the site's.
+      network_handover_devices:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The interface the hand-over adopts, by default the one that carries
+          the default route. The adopted profile copies its current address, so
+          the hand-over does not change the address the converge uses.
+      network_apply:
+        type: str
+        required: false
+        choices: [auto, boot, live, verify]
+        description: >-
+          How the link moves under NetworkManager. `boot` writes the Wi-Fi
+          keyfile, retires ifupdown for the next boot and leaves the running
+          link in place; `live` runs the detached systemd-networkd hand-over;
+          `verify` reads the link back; `auto` detects the current owner.
+      network_ifupdown_file:
+        type: str
+        required: false
+        description: The installer's ifupdown file, read for ownership and Wi-Fi credentials.
+      network_ifupdown_backup:
+        type: str
+        required: false
+        description: The one-time 0600 copy of the installer's ifupdown file.
+      network_wpa_supplicant_file:
+        type: str
+        required: false
+        description: >-
+          The installer's per-interface supplicant file, the second place the
+          radio credentials may live. Read with `no_log` in `boot` mode.
+      network_boot_profile:
+        type: str
+        required: false
+        description: The NetworkManager Wi-Fi keyfile written in `boot` mode.
+      network_boot_connection_name:
+        type: str
+        required: false
+        description: The connection id of the boot-mode Wi-Fi profile.
+      network_boot_profile_uuid:
+        type: str
+        required: false
+        description: The fixed UUID of the boot-mode Wi-Fi profile.
+      network_boot_powersave:
+        type: int
+        required: false
+        description: The `wifi.powersave` value written in the boot-mode profile.
+      network_boot_address:
+        type: str
+        required: false
+        description: >-
+          The static address the boot-mode keyfile declares, as a CIDR
+          (`192.0.2.10/24`). Empty carries the address the running link already
+          has. Declaring it requires `network_boot_gateway`; the next boot
+          applies the address, so the site updates `ansible_host` before the
+          reboot.
+      network_boot_gateway:
+        type: str
+        required: false
+        description: >-
+          The gateway that goes with `network_boot_address`. Empty carries the
+          gateway of the running default route. The two are declared together or
+          not at all.
+      network_boot_dns:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The DNS servers the boot-mode keyfile carries. `method=manual` learns
+          no resolver from DHCP, so a static Wi-Fi site declares this or
+          `resolver_fallback_dns`; the role fails before a reboot that would
+          leave the host without a resolver.
+      network_wifi_ssid:
+        type: str
+        required: false
+        description: >-
+          The site's SSID. Empty reads the installer's ifupdown file. A site that
+          declares it keeps the value in its inventory, not in a product default.
+      network_wifi_psk:
+        type: str
+        required: false
+        description: >-
+          The site's Wi-Fi PSK. Empty reads the installer's ifupdown file. The
+          value belongs in the site's vault, never in a tracked product file.
+      network_profile_managed:
+        type: bool
+        required: false
+        description: >-
+          True when the `live` mode writes the adopted profile and performs the
+          hand-over. False when the site already owns the live profile.
+      network_handover_script:
+        type: str
+        required: false
+        description: The hand-over script the oneshot runs.
+      network_handover_unit:
+        type: str
+        required: false
+        description: The oneshot that performs and reports the hand-over.
+      network_handover_profile:
+        type: str
+        required: false
+        description: The NetworkManager profile written for the adopted interface.
+      network_handover_profile_uuid:
+        type: str
+        required: false
+        description: >-
+          The profile's UUID. It is the profile's identity in NetworkManager, so
+          it is a constant and never derived from a host.
+      network_handover_timeout:
+        type: int
+        required: false
+        description: >-
+          Seconds NetworkManager has to adopt the interface before the hand-over
+          gives up and leaves the previous owner in place.
+      network_connectivity_check:
+        type: str
+        required: false
+        description: >-
+          `none` makes no network request (the product's rule, and Debian's
+          default); `debian` re-enables `network-test.debian.org`.
+        choices: [none, debian]
+      network_regulatory_domain:
+        type: str
+        required: false
+        description: >-
+          The Wi-Fi radio's two-letter regulatory domain. Empty keeps the
+          driver's world domain.

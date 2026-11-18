@@ -1,0 +1,10 @@
+LICENSES/CC-BY-SA-4.0.txt no-smart-quotes
+roles/hardening/templates/reboot-check.sh.j2 shebang
+roles/network/templates/handover.sh.j2 shebang
+roles/security/templates/nftables-workstation.nft.j2 shebang
+tools/scripts/binaries/gate.scs shebang
+tools/scripts/binaries/release.scs shebang
+tools/scripts/binaries/verify-release.scs shebang
+tools/scripts/modules/repo.scs shebang
+tools/scripts/modules/secrets.scs shebang
+tools/scripts/modules/verdict.scs shebang

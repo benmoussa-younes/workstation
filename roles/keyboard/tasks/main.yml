@@ -1,0 +1,58 @@
+---
+- name: The console-setup package is present
+  ansible.builtin.apt:
+    name: console-setup
+    state: present
+    cache_valid_time: 3600
+  # Installed here, non-interactively: configured interactively,
+  # keyboard-configuration runs its config script with a frontend that asks a
+  # locale-dependent `variant` question and blocks.
+
+- name: The keyboard layout is declared
+  ansible.builtin.template:
+    src: keyboard.j2
+    dest: /etc/default/keyboard
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the console keymap
+
+# The GRUB menu is drawn before the kernel exists, so it needs its own copy of
+# the layout: a table in GRUB's `.gkb` format, loaded by a script that
+# grub-mkconfig reads before any menu entry.
+- name: The GRUB keymap directory exists
+  ansible.builtin.file:
+    path: "{{ keyboard_grub_keymap_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: keyboard_layout | length > 0
+
+- name: GRUB's keyboard layout is compiled
+  ansible.builtin.command:
+    cmd: >-
+      grub-kbdcomp -o {{ keyboard_grub_keymap }}
+      {{ keyboard_layout }} {{ keyboard_variant }}
+    creates: "{{ keyboard_grub_keymap }}"
+  when: keyboard_layout | length > 0
+
+- name: GRUB loads the declared keyboard layout
+  ansible.builtin.template:
+    src: 05_keymap.j2
+    dest: "{{ keyboard_grub_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: keyboard_layout | length > 0
+  notify: Rebuild the bootloader configuration
+
+- name: A GRUB keymap script this role no longer declares is removed
+  ansible.builtin.file:
+    path: "{{ keyboard_grub_script }}"
+    state: absent
+  when: keyboard_layout | length == 0
+  notify: Rebuild the bootloader configuration
+
+- name: The console keymap is applied now
+  ansible.builtin.meta: flush_handlers

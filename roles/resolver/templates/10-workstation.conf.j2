@@ -1,0 +1,34 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The host's stub resolver: this file declares the upstreams and the behaviour.
+#
+# Two sources, one list: the servers the link declares (`network_dns`, or
+# `network_boot_dns` while the link is being handed to NetworkManager) and the
+# filtering resolver the site declares as a fallback. The link's servers are
+# named here as well as in networkd's `.network` file on purpose -- under
+# `network_apply: verify`, networkd does not manage the link, so this file is
+# the ONLY path by which the link's declared DNS reaches resolved. In `boot`
+# mode it is the only path at all: NetworkManager is not running yet and pushes
+# nothing to the stub until the next boot.
+#
+# `resolver_fallback_dns` is written to `DNS=`, not `FallbackDNS=`:
+# `resolved.conf(5)` consults `FallbackDNS=` only when NOTHING else is
+# configured, so a filtering resolver placed there would never be asked while
+# the link has a resolver of its own.
+# `FallbackDNS=` is emptied on purpose: systemd must not fall back to its
+# compiled-in public servers behind this file's back.
+[Resolve]
+{% set link_dns = (network_dns | default([])) + (network_boot_dns | default([])) %}
+{% if (link_dns | length) + (resolver_fallback_dns | length) > 0 %}
+DNS={{ (link_dns + resolver_fallback_dns) | unique | join(' ') }}
+{% else %}
+DNS=
+{% endif %}
+FallbackDNS=
+DNSOverTLS={{ 'yes' if resolver_dns_over_tls else 'no' }}
+DNSSEC={{ resolver_dnssec }}
+# No link-local multicast name resolution: LLMNR answers on 5355 to anything on
+# the link, and mDNS does the same on 5353.
+LLMNR={{ 'yes' if resolver_llmnr else 'no' }}
+MulticastDNS={{ 'yes' if resolver_multicast_dns else 'no' }}

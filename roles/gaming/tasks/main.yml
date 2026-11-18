@@ -1,0 +1,340 @@
+---
+# The opt-in gaming stack.
+#
+# The role installs Debian's Steam installer, the controller rules and the
+# gamemode/mangohud helpers, then enables the i386 architecture for Steam's
+# 32-bit libraries and mesa/vulkan stack. It is inert unless the site sets
+# `gaming_enabled: true`.
+#
+# The site's package sources must serve Debian `contrib` (steam-installer) and
+# i386 (steam-libs-i386 and the mesa/vulkan stack). The role reads the candidate
+# before it installs and refuses a host that serves neither, naming both. It
+# never adds a vendor repository and never falls back to the WAN silently.
+#
+# Check mode writes nothing: the architecture is not added, the package lists
+# are not refreshed, and the install is reported, not simulated.
+
+- name: The gaming sysctl drop-in is absent when gaming is disabled
+  ansible.builtin.file:
+    path: "{{ gaming_userns_sysctl }}"
+    state: absent
+  notify: Reload sysctl
+  when: not (gaming_enabled | bool)
+
+- name: The gaming stack is disabled
+  ansible.builtin.debug:
+    msg: "gaming: disabled; no package is declared"
+  when: not (gaming_enabled | bool)
+
+- name: The Debian identity is available for the gaming sources
+  ansible.builtin.assert:
+    that:
+      - identity_debian_release_name | default('') | length > 0
+    fail_msg: >-
+      The gaming role needs the identity role for the Debian suite. Run the
+      identity tag before gaming.
+  when: gaming_enabled | bool
+
+- name: The gaming stack is applied
+  when: gaming_enabled | bool
+  block:
+    - name: The account this workstation serves is named
+      ansible.builtin.assert:
+        that:
+          - workstation_user | default('') | length > 0
+        fail_msg: >-
+          Declare `workstation_user`: the gaming stack serves an account, and
+          the product never creates one.
+
+    - name: The account's groups are read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: id -nG {{ workstation_user | quote }}
+      register: gaming_account_groups
+      changed_when: false
+      check_mode: false
+
+    - name: The desktop groups are present
+      ansible.builtin.assert:
+        that:
+          - item in gaming_account_groups.stdout.split()
+        fail_msg: >-
+          {{ inventory_hostname }}: `{{ workstation_user }}` is not in
+          `{{ item }}`. The `desktop` role owns the desktop groups; it runs
+          before `gaming` and a host missing one is refused, not repaired here.
+      loop: "{{ gaming_required_groups }}"
+      loop_control:
+        label: "{{ item }}"
+      when: not ansible_check_mode
+
+    # In check mode `desktop` reports its group change without applying it, so
+    # the read above cannot see the groups yet. What CAN be verified there is the
+    # declaration itself, which is the thing a site gets wrong: a gaming host
+    # whose `workstation_desktop_groups` omits `video`, `render` or `input` would
+    # be refused by the real run anyway. The dry run checks the set instead of
+    # failing on a change it just announced.
+    - name: The declared desktop groups cover the gaming stack
+      ansible.builtin.assert:
+        that:
+          - gaming_required_groups | difference(workstation_desktop_groups | default([])) | length == 0
+        fail_msg: >-
+          {{ inventory_hostname }}: `gaming_enabled` is true but
+          `workstation_desktop_groups` omits
+          {{ gaming_required_groups | difference(workstation_desktop_groups | default([])) }}.
+          The `desktop` role adds only the groups the site declares.
+      when: ansible_check_mode
+
+    - name: The group membership cannot be read before the change is applied
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: check mode. The `desktop` role will add
+          {{ workstation_desktop_groups | default([]) | join(', ') }} to
+          `{{ workstation_user }}`;
+          the real run asserts the account's membership before installing the stack.
+      when: ansible_check_mode
+
+    # A real list, not a rendered string: `apt` receives the list object and
+    # installs each name; a folded scalar would stringify it.
+    - name: The declared gaming package list is computed
+      ansible.builtin.set_fact:
+        gaming_packages_all: "{{ [gaming_steam_package] + gaming_packages + gaming_i386_packages }}"
+
+    # `apt` must receive a list, not a rendered string. A folded scalar around
+    # the expression stringifies it; this assertion keeps that regression out.
+    - name: The computed package list is a list
+      ansible.builtin.assert:
+        that:
+          - gaming_packages_all is sequence
+          - gaming_packages_all is not string
+        fail_msg: >-
+          gaming_packages_all is not a list; the apt install would receive a
+          rendered string instead of package names.
+
+    - name: The foreign architectures are read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: dpkg --print-foreign-architectures
+      register: gaming_foreign_architectures
+      changed_when: false
+      check_mode: false
+
+    - name: The foreign architecture is added
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: dpkg --add-architecture {{ gaming_foreign_architecture }}
+      # The `when` already proves the architecture is absent; the command always
+      # changes the dpkg state when it runs.
+      changed_when: true
+      when:
+        - gaming_foreign_architecture not in gaming_foreign_architectures.stdout_lines
+        - not ansible_check_mode
+
+    - name: The package lists are refreshed after the architecture is added
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: apt-get update
+      # The site's sources are not all on the depot: Mozilla, Microsoft and
+      # VSCodium are external, and a LAN-only or WAN-less host makes `apt-get
+      # update` print warnings for them while still refreshing the depot's i386
+      # indexes. Neither their absence nor a transient failure may stop this
+      # role; the candidate assertions below are the real gate, and they name
+      # `contrib`/i386 when the depot itself is not serving them.
+      register: gaming_apt_update
+      changed_when: false
+      failed_when: false
+      when:
+        - gaming_foreign_architecture not in gaming_foreign_architectures.stdout_lines
+        - not ansible_check_mode
+
+    - name: Check mode reports the stack it would install
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: check mode would enable unprivileged user
+          namespaces, add `{{ gaming_foreign_architecture }}` and install
+          {{ gaming_packages_all | join(', ') }}.
+      when: ansible_check_mode
+
+    - name: The declared packages are installed and read back
+      when: not ansible_check_mode
+      block:
+        - name: The gaming sysctl drop-in is declared
+          ansible.builtin.copy:
+            content: |
+              # Managed by Ansible; do not edit.
+              # SPDX-License-Identifier: AGPL-3.0-or-later
+              #
+              # Steam's pressure-vessel sandbox needs unprivileged user
+              # namespaces. 60-hardening.conf disables them; this file loads
+              # after it and re-enables them on this opt-in gaming host.
+              kernel.unprivileged_userns_clone = 1
+            dest: "{{ gaming_userns_sysctl }}"
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Reload sysctl
+
+        - name: The sysctl handler runs before the read-back
+          ansible.builtin.meta: flush_handlers
+
+        - name: The unprivileged user namespace setting is read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            cmd: /usr/sbin/sysctl -n kernel.unprivileged_userns_clone
+          register: gaming_userns_value
+          changed_when: false
+
+        - name: Unprivileged user namespaces are enabled for gaming
+          ansible.builtin.assert:
+            that:
+              - gaming_userns_value.stdout | trim == '1'
+            fail_msg: >-
+              {{ inventory_hostname }}: kernel.unprivileged_userns_clone is
+              {{ gaming_userns_value.stdout | trim }}, not 1. Steam's
+              pressure-vessel needs it; check {{ gaming_userns_sysctl }} and
+              run `/usr/sbin/sysctl --system`.
+
+        # Debian's `contrib` is a component of the site's own archive, not a
+        # vendor repository: the role declares it on the Debian lines it finds
+        # rather than refusing the host until an operator edits the sources by
+        # hand. The `-security` suite is left alone: `contrib` there is not what
+        # serves `steam-installer`, and a site that wants it keeps its own line.
+        # A deb822 `.sources` file is not rewritten: its `Components:` line is
+        # the site's, and the read-back below says so when the candidate is
+        # still missing.
+        - name: The site's Debian sources file is read
+          ansible.builtin.stat:
+            path: "{{ gaming_debian_sources_file }}"
+          register: gaming_sources_file
+          check_mode: false
+
+        - name: The Debian sources serve contrib
+          ansible.builtin.replace:
+            path: "{{ gaming_debian_sources_file }}"
+            regexp: '^(deb\s+\S+\s+{{ gaming_debian_suite }}(?:-updates)?\s+)(?!.*\bcontrib\b)(.*)$'
+            replace: '\1contrib \2'
+            backup: true
+          register: gaming_sources_contrib
+          when: gaming_sources_file.stat.exists
+          notify: Refresh the package lists
+
+        - name: The package-list handler runs before the candidate is read
+          ansible.builtin.meta: flush_handlers
+
+        - name: The Steam candidate is read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            cmd: apt-cache policy {{ gaming_steam_package | quote }}
+          environment:
+            LC_ALL: C
+          register: gaming_steam_candidate
+          changed_when: false
+          check_mode: false
+
+        - name: The Steam package is available from the declared sources
+          ansible.builtin.assert:
+            that:
+              - >-
+                gaming_steam_candidate.stdout is search('Candidate: ')
+              - "'Candidate: (none)' not in gaming_steam_candidate.stdout"
+            fail_msg: >-
+              {{ inventory_hostname }}: `{{ gaming_steam_package }}` has no
+              candidate. The role adds `contrib` to
+              {{ gaming_debian_sources_file }} (`{{ gaming_debian_suite }}` and `{{ gaming_debian_suite }}-updates`
+              only); a deb822 source keeps its own `Components:` line and must
+              name `contrib` itself. apt-cache policy says:
+              {{ gaming_steam_candidate.stdout | trim
+                 | default('(no output; the package name is unknown to the configured sources)', true) }}
+
+        - name: The i386 candidate is read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            cmd: apt-cache policy {{ gaming_i386_packages[0] | quote }}
+          environment:
+            LC_ALL: C
+          register: gaming_i386_candidate
+          changed_when: false
+          check_mode: false
+          when: gaming_i386_packages | length > 0
+
+        - name: The i386 graphics stack is available from the declared sources
+          ansible.builtin.assert:
+            that:
+              - >-
+                gaming_i386_candidate.stdout is search('Candidate: ')
+              - "'Candidate: (none)' not in gaming_i386_candidate.stdout"
+            fail_msg: >-
+              {{ inventory_hostname }}: `{{ gaming_i386_packages[0] }}` has no
+              candidate. The site's package sources must serve the
+              `{{ gaming_foreign_architecture }}` architecture; apt-cache policy
+              says:
+              {{ gaming_i386_candidate.stdout | trim
+                 | default('(no output; the package name is unknown to the configured sources)', true) }}
+          when: gaming_i386_packages | length > 0
+
+        - name: The declared gaming packages are installed
+          block:
+            - name: The declared gaming packages are installed
+              ansible.builtin.apt:
+                name: "{{ gaming_packages_all }}"
+                state: present
+                cache_valid_time: "{{ gaming_package_cache_valid_time }}"
+          rescue:
+            - name: The Steam candidate versions are read after a failed install
+              ansible.builtin.command:  # noqa: command-instead-of-module
+                cmd: >-
+                  apt-cache policy
+                  {{ gaming_steam_package | quote }}
+                  steam-libs steam-libs-i386
+              environment:
+                LC_ALL: C
+              register: gaming_steam_conflict
+              changed_when: false
+              failed_when: false
+
+            - name: The gaming install failure names its cause
+              ansible.builtin.fail:
+                msg: >-
+                  {{ inventory_hostname }}: the gaming packages could not be
+                  installed. Debian's `{{ gaming_steam_package }}` pins
+                  `steam-libs-i386` to its own version; a site repository that
+                  carries a newer Valve build shadows it. The candidates are:
+                  {{ gaming_steam_conflict.stdout }}
+                  Remove the Valve Steam packages from the site's own suite, or
+                  pin the Debian versions, before the next converge.
+
+        - name: The gaming package states are read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            cmd: dpkg-query -W -f='${db:Status-Status}' {{ item }}
+          loop: "{{ gaming_packages_all }}"
+          loop_control:
+            label: "{{ item }}"
+          register: gaming_package_states
+          changed_when: false
+          failed_when: false
+          when:
+            - gaming_packages_all | length > 0
+
+        - name: Every declared gaming package is installed
+          ansible.builtin.assert:
+            that:
+              - >-
+                gaming_package_states.results
+                | rejectattr('stdout', 'equalto', 'installed') | list | length == 0
+            fail_msg: >-
+              {{ inventory_hostname }} is missing
+              {{ gaming_package_states.results
+                 | rejectattr('stdout', 'equalto', 'installed')
+                 | map(attribute='item') | list }}. Check the site's Debian
+              `contrib` and `{{ gaming_foreign_architecture }}` sources before
+              the next converge.
+          when:
+            - gaming_packages_all | length > 0
+
+        - name: The foreign architectures are read back
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            cmd: dpkg --print-foreign-architectures
+          register: gaming_foreign_after
+          changed_when: false
+          check_mode: false
+
+        - name: The foreign architecture is present
+          ansible.builtin.assert:
+            that:
+              - gaming_foreign_architecture in gaming_foreign_after.stdout_lines
+            fail_msg: >-
+              {{ inventory_hostname }}: `{{ gaming_foreign_architecture }}` is
+              not enabled after the install; Steam's 32-bit libraries cannot
+              resolve.

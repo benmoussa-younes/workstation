@@ -1,0 +1,63 @@
+---
+argument_specs:
+  main:
+    short_description: The Workstation boot splash.
+    description:
+      - >-
+        Installs the Workstation Plymouth theme from this product's own assets,
+        selects it with `plymouth-set-default-theme`, rebuilds the initramfs and
+        reads the selection back from the theme's own files. It does not write
+        the kernel command line: `hardening` declares `splash`, and this role
+        refuses a host where that option is missing.
+    author: Younes BENMOUSSA
+    options:
+      plymouth_theme_name:
+        type: str
+        required: false
+        description: The theme name Plymouth selects and records.
+      plymouth_theme_source:
+        type: str
+        required: false
+        description: >-
+          The theme's directory in this product's assets. It is never read from
+          another product's tree.
+      plymouth_theme_dir:
+        type: str
+        required: false
+        description: Where Plymouth looks for the theme's files.
+      plymouth_package:
+        type: str
+        required: false
+        description: The package that provides `plymouthd` and the theme selector.
+      plymouth_install_themes:
+        type: bool
+        required: false
+        description: >-
+          Install the distribution's theme collection, so a site that selects
+          another theme finds it ready.
+      plymouth_themes_package:
+        type: str
+        required: false
+        description: The distribution's theme collection package.
+      plymouth_default_theme_tool:
+        type: str
+        required: false
+        description: The theme selector.
+      plymouth_update_initramfs:
+        type: str
+        required: false
+        description: The initramfs builder.
+      plymouth_selection_file:
+        type: str
+        required: false
+        description: The file that records the selected theme.
+      plymouth_required_cmdline_option:
+        type: str
+        required: false
+        description: >-
+          The kernel option the splash needs (`splash`); its absence is a
+          refused host, not a second GRUB edit.
+      plymouth_grub_default:
+        type: str
+        required: false
+        description: The file the required kernel option is read from.

@@ -1,0 +1,50 @@
+---
+argument_specs:
+  main:
+    short_description: The GNOME desktop packages.
+    description:
+      - >-
+        Installs Debian's own GNOME desktop task (`task-gnome-desktop`, i.e.
+        `gnome-core` plus the X server) and asserts that a Wayland session
+        exists. GNOME is the product's only desktop.
+    author: Younes BENMOUSSA
+    options:
+      gnome_packages:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The Debian packages that provide the GNOME desktop.
+      gnome_document_viewer:
+        type: str
+        required: false
+        description: >-
+          The current GNOME document viewer, installed before `gnome-core` so
+          its `evince | papers` alternative is satisfied by Papers.
+      gnome_video_player:
+        type: str
+        required: false
+        description: >-
+          The current GNOME video player, installed before `gnome-core` so its
+          `totem | showtime` alternative is satisfied by Showtime.
+      gnome_retired_document_viewer:
+        type: str
+        required: false
+        description: The older document viewer retired after the meta-package.
+      gnome_retired_video_player:
+        type: str
+        required: false
+        description: The older video player retired after the meta-package.
+      gnome_session_type:
+        type: str
+        required: false
+        description: >-
+          The session type the product requires. One value, `wayland`: a
+          session read on X11 is a defect the role refuses.
+      gnome_install_recommends:
+        type: bool
+        required: false
+        description: >-
+          Install Recommends for the desktop. True: Debian's desktop task is
+          what it is, except for the current viewer pair, which the product
+          pins explicitly.

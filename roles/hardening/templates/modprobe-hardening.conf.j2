@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Subsystems this host does not use. `install … /bin/false` prevents the
+# module loading at all; `blacklist` only stops udev auto-loading it. A service
+# that genuinely needs one of these must say so, and the list must change with
+# it.
+#
+# `blacklist` is for hardware whose probe the kernel performs on its own: a
+# refusal there is an error in the journal for a device nothing will drive.
+{% for module in hardening_modules_blocked %}
+install {{ module }} /bin/false
+{% endfor %}
+{% for module in hardening_modules_blacklisted %}
+blacklist {{ module }}
+{% endfor %}

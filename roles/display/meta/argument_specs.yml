@@ -1,0 +1,74 @@
+---
+argument_specs:
+  main:
+    short_description: GDM, the display manager.
+    description:
+      - >-
+        Declares GDM as the owner of the graphical seat: the unit is enabled
+        through itself (never a hand-written `display-manager.service` alias,
+        which `gdm.service` owns), the session type is written where GDM reads
+        it, and the result is read back. A second display manager on the host
+        is refused. The handler restarts GDM, which ends every graphical
+        session that is running.
+    author: Younes BENMOUSSA
+    options:
+      display_manager_package:
+        type: str
+        required: false
+        description: The display manager package.
+      display_manager_service:
+        type: str
+        required: false
+        description: The unit GDM ships.
+      display_manager_alias:
+        type: str
+        required: false
+        description: >-
+          The alias the graphical target starts. It is created by GDM's own
+          unit; the role only reads it.
+      display_manager_config_dir:
+        type: str
+        required: false
+        description: The GDM configuration directory.
+      display_manager_config:
+        type: str
+        required: false
+        description: >-
+          GDM's own configuration file. The role writes the one session key GDM
+          reads (`WaylandEnable`) and leaves every other key alone.
+      display_manager_greeter_defaults:
+        type: str
+        required: false
+        description: >-
+          The greeter's dconf defaults. The role writes the logo key here; the
+          image itself belongs to the `branding` role.
+      display_manager_autologin:
+        type: bool
+        required: false
+        description: >-
+          Log a session in without a password. False unless the site decides
+          otherwise.
+      display_manager_autologin_user:
+        type: str
+        required: false
+        description: The account the autologin uses; empty unless the site decides.
+      display_manager_logo_dir:
+        type: str
+        required: false
+        description: The directory the `branding` role installs GDM's logo into.
+      display_manager_logo:
+        type: str
+        required: false
+        description: The logo GDM shows on its login screen.
+      display_manager_wallpaper:
+        type: str
+        required: false
+        description: >-
+          The wallpaper the greeter draws. It is installed by the `branding`
+          role, which runs before this one.
+      display_manager_background_color:
+        type: str
+        required: false
+        description: >-
+          The colour behind the greeter's wallpaper. It also replaces the
+          default grey when the display cannot draw the image.

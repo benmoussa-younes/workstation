@@ -1,0 +1,46 @@
+## Managed by Ansible; do not edit.
+## SPDX-License-Identifier: AGPL-3.0-or-later
+##
+## this product's audit rules (base-roles.md, hardening item 7). `augenrules`
+## merges this file, in name order, into `/etc/audit/audit.rules` -- the control
+## directives (`-D`, `-b`, `--backlog_wait_time`, `-f`) come from Debian's own
+## `rules.d/audit.rules`. Only EVENT rules live here.
+##
+## No `-D` (the distribution's file already deletes the old ruleset) and no
+## `-e 2`: an immutable ruleset would break this role's reload on the next
+## converge, and is only reversible by a reboot.
+
+## Identity and authentication: a change here is a privilege change.
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+
+## Privilege and PAM.
+-w /etc/sudoers -p wa -k scope
+-w /etc/sudoers.d/ -p wa -k scope
+-w /etc/pam.d/ -p wa -k scope
+
+## SSH access configuration.
+-w /etc/ssh/sshd_config -p wa -k sshd
+-w /etc/ssh/sshd_config.d/ -p wa -k sshd
+
+## The audit configuration itself: a change to it is a change to the trail.
+-w /etc/audit/ -p wa -k auditconfig
+-w /etc/audit/rules.d/ -p wa -k auditconfig
+
+## Time changes (a wrong clock breaks TLS, Kerberos and the audit timeline).
+-a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
+-w /etc/localtime -p wa -k time-change
+
+## System identity.
+-a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
+-w /etc/hostname -p wa -k system-locale
+-w /etc/hosts -p wa -k system-locale
+
+## Kernel module load and unload.
+-a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k modules
+
+## Filesystem mounts.
+-a always,exit -F arch=b64 -S mount -k mounts

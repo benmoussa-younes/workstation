@@ -1,0 +1,88 @@
+---
+argument_specs:
+  main:
+    short_description: the product's time -- chrony on the serving hosts, timesyncd on the clients.
+    description:
+      - Installs exactly one time daemon per host -- chrony on
+        the hosts that serve NTP to this product, systemd-timesyncd on the clients
+        -- declares the served subnet, adds a drop-in to Debian's chrony
+        configuration (never overwriting its conffile), hardens the server
+        (no remote command port, per-source rate limiting), points the clients at
+        this product's servers, and asserts the one-disciplinarian invariant.
+    author: Younes BENMOUSSA
+    options:
+      time_serve:
+        type: bool
+        required: false
+        description: Whether this host serves NTP to this product (structural).
+      time_timezone:
+        type: str
+        required: false
+        description: >-
+          The host's timezone. It must exist under `/usr/share/zoneinfo`; the
+          role applies it with `timedatectl set-timezone`.
+      time_client_package:
+        type: str
+        required: false
+        description: The client daemon (a systemd component).
+      time_server_package:
+        type: str
+        required: false
+        description: The serving daemon (no systemd server exists).
+      time_servers:
+        type: list
+        elements: str
+        required: false
+        description: the product's NTP servers, as a client sees them.
+      time_client_fallback_pools:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The clients' fallback when this product's servers are silent. Empty by
+          timesyncd has no preference and a pool in NTP= wins the boot race.
+      time_timesyncd_conf_dir:
+        type: str
+        required: false
+        description: The client's drop-in directory.
+      time_timesyncd_conf:
+        type: str
+        required: false
+        description: The client's drop-in file.
+      time_subnet:
+        type: str
+        required: false
+        description: The subnet a serving host answers; refused when empty.
+      time_upstream_pools:
+        type: list
+        elements: str
+        required: false
+        description: Extra upstream pools, added to the distribution's.
+      time_interface:
+        type: str
+        required: false
+        description: The interface the NTP socket binds; empty leaves it open.
+      time_chrony_stock:
+        type: str
+        required: false
+        description: The distribution's conffile, asserted to include confdir.
+      time_chrony_conf_dir:
+        type: str
+        required: false
+        description: The drop-in directory Debian's conffile includes.
+      time_chrony_dropin:
+        type: str
+        required: false
+        description: The drop-in the role writes.
+      time_ratelimit_interval:
+        type: int
+        required: false
+        description: chrony `ratelimit` interval (log2 seconds).
+      time_ratelimit_burst:
+        type: int
+        required: false
+        description: chrony `ratelimit` burst.
+      time_command_port:
+        type: int
+        required: false
+        description: The command port; 0 disables remote `chronyc`.

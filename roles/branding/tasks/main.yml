@@ -1,0 +1,103 @@
+---
+# The visuals, each one installed and then read back by its consumer.
+#
+# An image is a file with a size, not a name: `copy` proves the bytes, the
+# read-back below proves the RIGHT file stayed (a zero-byte or renamed copy is
+# what a login screen shows as nothing).
+
+- name: The wallpaper is installed
+  ansible.builtin.copy:
+    src: "{{ branding_wallpaper_source }}"
+    dest: "{{ branding_wallpaper }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: The GDM asset directory exists
+  ansible.builtin.file:
+    path: "{{ branding_gdm_logo_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# GDM's own default is `no-logo`; `logo` is the key its greeter reads, and the
+# `display` role declares it. This role owns the FILE the key names.
+- name: GDM shows the product's mark
+  ansible.builtin.copy:
+    src: "{{ branding_logo_source }}"
+    dest: "{{ branding_gdm_logo }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: The boot menu's image is installed
+  ansible.builtin.copy:
+    src: "{{ branding_grub_image_source }}"
+    dest: "{{ branding_grub_image }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Debian's `10_linux` appends ` GNU/Linux` to the distributor name; the
+# `hardening` role replaces that literal line and reads the rebuilt `grub.cfg`
+# back (a deliberate divergence from the Server collection). The `branding` role only owns the background
+# image key here and never the title.
+
+# One key, ensured: `/etc/default/grub` is `hardening`'s file too, and neither
+# role may rewrite it. `hardening` owns `GRUB_CMDLINE_LINUX_DEFAULT`; this key
+# is the background image and nothing else.
+- name: The boot menu names the product's image
+  ansible.builtin.lineinfile:
+    path: "{{ branding_grub_default }}"
+    regexp: '^GRUB_BACKGROUND='
+    line: 'GRUB_BACKGROUND="{{ branding_grub_image }}"'
+    state: present
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update grub
+
+- name: The visuals are applied to the boot menu
+  ansible.builtin.meta: flush_handlers
+
+- name: The installed visuals are read back
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ branding_wallpaper }}"
+    - "{{ branding_gdm_logo }}"
+    - "{{ branding_grub_image }}"
+  register: branding_files
+  when: not ansible_check_mode
+
+- name: Every visual is installed
+  ansible.builtin.assert:
+    that:
+      - branding_files.results | rejectattr('stat.exists') | list | length == 0
+      - (branding_files.results | map(attribute='stat.size') | min) > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: a visual is missing or empty
+      ({{ branding_files.results | rejectattr('stat.exists') | map(attribute='item') | list }}).
+  when: not ansible_check_mode
+
+# GRUB draws the image only when the generated menu names it. Reading the
+# generated file is the result; the key above is the declaration.
+- name: The generated menu names the image
+  ansible.builtin.command:
+    cmd: grep -c '^background_image' /boot/grub/grub.cfg
+  register: branding_grub_generated
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The boot menu uses the product's image
+  ansible.builtin.assert:
+    that:
+      - branding_grub_generated.stdout | trim | int > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: /boot/grub/grub.cfg has no `background_image`
+      line, so the boot menu shows no image. Read `{{ branding_grub_default }}`
+      and run `update-grub`.
+  when: not ansible_check_mode

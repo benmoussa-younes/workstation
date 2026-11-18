@@ -1,0 +1,320 @@
+---
+# One daemon per host, chosen by the host's class. Debian's
+# packages make chrony and systemd-timesyncd mutually exclusive, so this role
+# installs exactly one -- and then reads the result back from dpkg.
+#
+# The assertion below is a POST-CONDITION: the right daemon is installed and the
+# other is not. It is NOT a guard against `systemd-timesyncd` being re-added to
+# `common_packages`: `common` would then install it, this role's own install
+# would put the right daemon back, and the run would end correct -- merely
+# churning on every converge. The real protections against that are
+# `common_packages` itself and the idempotency check, not this assert. Found by
+# independent verification (2026-10-06), and written down rather than implied.
+
+- name: The host uses systemd
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.service_mgr == 'systemd'
+    fail_msg: "{{ inventory_hostname }} does not use systemd."
+
+- name: The declared timezone is known to the zoneinfo database
+  ansible.builtin.stat:
+    path: "/usr/share/zoneinfo/{{ time_timezone }}"
+  register: time_zoneinfo
+
+- name: The declared timezone is a real zone
+  ansible.builtin.assert:
+    that:
+      - time_timezone | length > 0
+      - time_zoneinfo.stat.exists
+    fail_msg: >-
+      {{ inventory_hostname }}: time_timezone is `{{ time_timezone }}`, which
+      has no entry under /usr/share/zoneinfo. Declare a real zone (for example
+      `Europe/Paris` or `Etc/UTC`).
+
+- name: The current timezone is read
+  ansible.builtin.command:
+    cmd: timedatectl show -p Timezone --value
+  register: time_timezone_current
+  changed_when: false
+  check_mode: false
+
+- name: The declared timezone is applied
+  ansible.builtin.command:
+    cmd: "timedatectl set-timezone {{ time_timezone }}"
+  when:
+    - not ansible_check_mode
+    - time_timezone_current.stdout | trim != time_timezone
+  changed_when: true
+
+# --- the serving host: chrony disciplines and serves -------------------------
+
+- name: A serving host declares the subnet it answers
+  ansible.builtin.assert:
+    that:
+      - time_subnet | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }} serves NTP but declares no `time_subnet`: chrony
+      refuses every client by default, so an empty value serves nobody.
+  when: time_serve | bool
+
+# The firewall is a separate role that owns the `input` chain, so a serving host
+# must OPEN the port itself: `security` reads `security_extra_services` and runs
+# after this role in `base.yml`. Without this, chrony would answer and the
+# packets would be dropped before reaching it -- a server that looks healthy and
+# synchronises nobody.
+- name: The NTP port is opened to the declared subnet
+  ansible.builtin.set_fact:
+    security_extra_services: >-
+      {{ security_extra_services | default([]) + [
+           { 'port': 123, 'proto': 'udp', 'sources': [time_subnet] }
+         ] }}
+  when: time_serve | bool
+
+- name: The serving daemon is installed
+  ansible.builtin.apt:
+    name: "{{ time_server_package }}"
+    state: present
+    cache_valid_time: 3600
+  when: time_serve | bool
+
+# The drop-in only works while Debian's conffile still includes `confdir`. If it
+# ever lost that line -- overwritten by hand, by an older version of a role, or
+# by a future packaging change -- every directive below would be ignored and the
+# server would answer nobody, silently. Read the real file and fail loudly.
+- name: The distribution's chrony configuration includes its drop-in directory
+  # The conffile is shipped by the package installed above, which check mode only
+  # SIMULATES: reading it there fails on the absent file. Read, and assert on the
+  # read, only where the file is real.
+  ansible.builtin.command:
+    cmd: "grep -qE '^[[:space:]]*confdir[[:space:]]' {{ time_chrony_stock }}"
+  register: time_chrony_confdir
+  changed_when: false
+  failed_when: false
+  when:
+    - time_serve | bool
+    - not ansible_check_mode
+
+- name: The distribution's conffile is intact, so the drop-in is read
+  ansible.builtin.assert:
+    that:
+      - time_chrony_confdir.rc == 0
+    fail_msg: >-
+      {{ time_chrony_stock }} does not include a `confdir` directive, so
+      {{ time_chrony_dropin }} would be ignored and the server would answer
+      nobody. Restore the distribution's conffile -- Debian manages it with
+      `ucf`, so `apt --reinstall --force-confnew` does NOT replace it; copy the
+      package's template instead: `cp /usr/share/chrony/chrony.conf
+      /etc/chrony/chrony.conf`.
+  when:
+    - time_serve | bool
+    - not ansible_check_mode
+
+- name: The serving daemon's declaration is in place
+  ansible.builtin.template:
+    src: chrony-dropin.conf.j2
+    dest: "{{ time_chrony_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: time_serve | bool
+  notify: Restart chrony
+
+# `chronyd -p` parses the whole effective configuration (the stock file and the
+# drop-in) and exits; a bad directive fails here, next to the file that caused
+# it, instead of at the next restart.
+- name: The merged chrony configuration is valid
+  ansible.builtin.command:
+    cmd: chronyd -p
+  changed_when: false
+  register: time_chrony_parse
+  failed_when: time_chrony_parse.rc != 0
+  when:
+    - time_serve | bool
+    - not ansible_check_mode
+
+# The package is installed by the task above, so the unit exists on a real run --
+# but not in check mode, where the install is only reported.
+- name: The serving daemon is enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ time_server_package }}"
+    enabled: true
+    state: started
+  when:
+    - time_serve | bool
+    - not ansible_check_mode
+
+# --- the client host: systemd-timesyncd, pointed at the declared servers ------
+
+- name: The client daemon is installed
+  ansible.builtin.apt:
+    name: "{{ time_client_package }}"
+    state: present
+    cache_valid_time: 3600
+  when: not time_serve | bool
+
+- name: A client declares where it takes its time
+  # `NTP=` is rendered from `time_servers`, and an EMPTY list is not a neutral
+  # value: the drop-in would leave the host with no source at all. The site
+  # declares its servers (`time_servers`), or accepts the distribution's pool
+  # explicitly (`time_client_fallback_pools`).
+  ansible.builtin.assert:
+    that:
+      - (time_servers | length > 0) or (time_client_fallback_pools | length > 0)
+    fail_msg: >-
+      {{ inventory_hostname }} takes its time from nowhere: declare
+      `time_servers` (the hosts that serve NTP) or, deliberately,
+      `time_client_fallback_pools`.
+  when: not time_serve | bool
+
+# The template must not carry a Jinja block: with `trim_blocks`, an `{% endif %}`
+# at the end of a line swallows the newline and concatenates the next key --
+# measured on the proof host on 2026-10-30, where the drop-in read
+# `NTP=...FallbackNTP=...` and timesyncd had no valid server. The choice is made
+# here, and the template renders two plain lines.
+- name: The client's effective time sources are decided
+  ansible.builtin.set_fact:
+    time_effective_servers: >-
+      {{ time_servers if time_servers | length > 0
+         else time_client_fallback_pools }}
+  when: not time_serve | bool
+
+- name: The client's declaration directory exists
+  ansible.builtin.file:
+    path: "{{ time_timesyncd_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not time_serve | bool
+
+- name: The client's time source is declared
+  ansible.builtin.template:
+    src: timesyncd.conf.j2
+    dest: "{{ time_timesyncd_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not time_serve | bool
+  notify: Restart timesyncd
+
+- name: The client daemon is enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ time_client_package }}"
+    enabled: true
+    state: started
+  when:
+    - not time_serve | bool
+    - not ansible_check_mode
+
+# The declaration is read back as lines, not trusted because the template task
+# reported `ok`: this is the check that catches a swallowed newline.
+- name: The client's rendered declaration is read
+  ansible.builtin.slurp:
+    src: "{{ time_timesyncd_conf }}"
+  register: time_client_rendered
+  when:
+    - not time_serve | bool
+    - not ansible_check_mode
+
+- name: The client declares both time-source lines separately
+  ansible.builtin.assert:
+    that:
+      - >-
+        ("NTP=" ~ (time_effective_servers | join(' ')))
+        in (time_client_rendered.content | b64decode).split('\n')
+      - >-
+        ("FallbackNTP=" ~ (time_client_fallback_pools | join(' ')))
+        in (time_client_rendered.content | b64decode).split('\n')
+      - >-
+        (time_client_rendered.content | b64decode).split('\n')
+        | select('search', '^NTP=.*FallbackNTP=') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ time_timesyncd_conf }} does not carry
+      `NTP=` and `FallbackNTP=` on separate lines. Read the rendered file: a
+      Jinja block at the end of a line swallows the newline.
+  when:
+    - not time_serve | bool
+    - not ansible_check_mode
+
+- name: The client daemon runs with the declaration
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl is-active {{ time_client_package }}
+  register: time_client_active
+  changed_when: false
+  failed_when: false
+  when:
+    - not time_serve | bool
+    - not ansible_check_mode
+
+- name: The client daemon is active
+  ansible.builtin.assert:
+    that:
+      - time_client_active.stdout | trim == 'active'
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ time_client_package }} is
+      `{{ time_client_active.stdout | trim }}` after its declaration was
+      written. Read `systemctl status {{ time_client_package }}`.
+  when:
+    - not time_serve | bool
+    - not ansible_check_mode
+
+# --- the invariant: exactly one daemon owns the clock ------------------------
+
+# Read from dpkg, not from what the tasks above believe: the assertion is a
+# post-condition on the real package state. Check mode is skipped, because there
+# the install above is only simulated.
+- name: The installed packages are read
+  ansible.builtin.package_facts:
+    manager: apt
+  when: not ansible_check_mode
+
+- name: Exactly one time daemon owns the clock
+  ansible.builtin.assert:
+    that:
+      - (time_server_package in ansible_facts.packages) == (time_serve | bool)
+      - (time_client_package in ansible_facts.packages) != (time_serve | bool)
+    fail_msg: >-
+      {{ inventory_hostname }}: chrony and systemd-timesyncd both discipline the
+      clock and conflict as packages, so exactly one may be installed. Expected
+      {{ time_server_package if time_serve | bool else time_client_package }}.
+  when: not ansible_check_mode
+
+# A drop-in this role does not declare sorts after its own and wins the keys:
+# measured on a converted machine (2026-10-20), where a hand-written
+# `90-workstation.conf` decided `NTP=` while the role believed `50-` did.
+- name: The time client's drop-ins already present are listed
+  ansible.builtin.find:
+    paths: "{{ time_timesyncd_conf_dir }}"
+    patterns: "*.conf"
+    file_type: file
+  register: time_existing
+  when: not time_serve | bool
+
+- name: The time client's drop-ins are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ time_existing.files | default([]) | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('equalto', time_timesyncd_conf)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: time_owner
+  changed_when: false
+  failed_when: false
+  when: not time_serve | bool
+
+- name: The time client's drop-ins no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: >-
+    {{ time_owner.results | default([])
+       | rejectattr('rc', 'equalto', 0) | list }}
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+  notify: Restart timesyncd
+  when: not time_serve | bool

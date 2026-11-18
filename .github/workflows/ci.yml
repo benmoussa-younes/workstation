@@ -1,0 +1,70 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        ansible-core: ["2.19.*", "2.20.*", "2.21.*", "2.22.*"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the Scripts interpreter
+        run: |
+          curl -fsSL -o /tmp/scripts.tar.gz \
+            https://github.com/benmoussa-younes/scripts/releases/download/v0.1.2/scripts_0.1.2_linux-x64.tar.gz
+          echo "db1b23ffa5c3baea6294f9b1f2f36a0d3b8dd9dd8646ffe95dc3dc9c9bb9214f  /tmp/scripts.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/scripts.tar.gz -C /tmp
+          sudo install /tmp/scripts-0.1.2/scripts /usr/local/bin/scripts
+          scripts --version
+
+      - name: Install Ansible and the linters
+        run: |
+          pipx install "ansible-core==${{ matrix.ansible-core }}"
+          pipx install "ansible-lint==26.11.0"
+          pipx install "yamllint==1.37.1"
+          pipx install "reuse==5.0.2"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare the collection path for ansible-test
+        run: |
+          mkdir -p /tmp/ansible_collections/benmoussa
+          cp -a "$GITHUB_WORKSPACE" /tmp/ansible_collections/benmoussa/workstation
+          rm -rf /tmp/ansible_collections/benmoussa/workstation/.git \
+                 /tmp/ansible_collections/benmoussa/workstation/dist \
+                 /tmp/ansible_collections/benmoussa/workstation/.ansible
+
+      - name: Ansible sanity tests
+        working-directory: /tmp/ansible_collections/benmoussa/workstation
+        run: ansible-test sanity --python 3.13
+
+      - name: Ansible lint on the whole repository
+        run: ansible-lint
+
+      - name: Check the repository scripts
+        run: |
+          scripts check tools/scripts/binaries/gate.scs
+          scripts check tools/scripts/binaries/release.scs
+          scripts check tools/scripts/binaries/verify-release.scs
+
+      - name: Gate
+        run: scripts run tools/scripts/binaries/gate.scs

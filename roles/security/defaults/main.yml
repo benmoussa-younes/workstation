@@ -1,0 +1,134 @@
+---
+# The inbound firewall — nftables directly, NOT ufw.
+#
+# ufw is a front-end to the same kernel facility; it would add a layer whose
+# state we then reason about indirectly. The role owns the `input` chain, and
+# also declares the `forward` chain with a DROP policy so that a host which
+# routes something does so by declaration, never by accident. The ruleset a host
+# needs depends on what the other roles provide -- DNS, NTP on a serving host,
+# the VPN -- so `base.yml` applies this role last among the network-facing ones.
+#
+# Both chains end in a counted `drop` as well as declaring it as their policy:
+# the policy closes the chain, the rule makes the refusal visible.
+#
+# The table is loaded from a drop-in after the site's own file, atomically, and
+# only ever this table — never `flush ruleset`, which would wipe another
+# product's rules when nftables reloads.
+security_firewall_table: workstation
+security_ssh_port: 22
+
+# The product's table is a drop-in loaded after the distribution's conffile.
+# `/etc/nftables.conf` is a package file and is never written: a site keeps its
+# own tables, and the product's file deletes and recreates only its own table.
+security_nftables_dir: /etc/nftables.d
+security_nftables_file: "{{ security_nftables_dir }}/workstation.nft"
+security_nftables_service_dropin_dir: /etc/systemd/system/nftables.service.d
+security_nftables_service_dropin: >-
+  {{ security_nftables_service_dropin_dir }}/10-workstation.conf
+
+# Whether `ufw` is retired when it is present. True is the right answer for a
+# machine this product owns: two front-ends on one kernel is two policies, and
+# only one of them is declared here. Set false only where another manager must
+# keep its own.
+security_retire_ufw: true
+
+# The policy of the `forward` chain: `drop` (nothing routes unless declared) or
+# `accept` (everything routes). A host that runs Docker MUST choose consciously:
+# Docker publishes ports through its own NAT rules, which a DROP policy kills.
+# The product defaults to `drop` because routing is a decision, not a default.
+#
+# The template also writes a counted `drop` as the last rule when this is
+# `drop`: the policy closes the chain, the rule makes the refusal visible in
+# `nft list ruleset`. `accept` writes no terminal rule.
+security_forward_policy: drop
+
+# What the host ROUTES, as `iif`/`oif` interface pairs (with an optional
+# `sources` list). Empty means the node forwards nothing; the hook is still
+# owned and policed, so a site that later forwards something declares it here
+# instead of discovering the kernel was doing it unfiltered.
+#   security_forward_flows:
+#     - { iif: wg-client, oif: wg-mesh }
+security_forward_flows: []
+
+# The ruleset the role last APPLIED, remembered so a live firewall that was
+# changed behind this product's back is noticed rather than converging silently
+# (`nft list table` output, which is the only rendering comparable with the live
+# one -- see the tasks). Never read by anything but the role's own comparison.
+security_ruleset_snapshot: /var/lib/workstation/nftables.applied
+
+# Who may reach sshd. Empty means anywhere, but `security_ssh_sources_required`
+# is true by default, so a site that leaves it empty FAILS the converge instead
+# of exposing sshd: an empty list must be a decision
+# (`security_ssh_sources_anywhere: true`), never an omission. A site narrows it
+# to its own subnet.
+security_ssh_sources: []
+
+# Additional reachable services, declared by the roles that need them:
+#   security_extra_services:
+#     - { port: 53, proto: udp }
+security_extra_services: []
+
+# Additional reachable **protocols**, for what a `port` cannot express: an IP
+# protocol has no port, and through the port schema the role would render
+# `tcp dport 112` -- which PARSES and matches nothing, so the traffic would be
+# dropped in silence (measured: the invalid `112 dport 112` form is rejected by
+# `nft -c`, the schema-injected `tcp dport 112` is accepted and useless).
+# Declared by the roles that need them:
+#   security_extra_protocols:
+#     - { protocol: 112, sources: [192.0.2.0/24] }
+security_extra_protocols: []
+
+# sshd. The drop-in below wins over the distribution's file without owning it.
+# An **allowlist by default**: only administrators log in. The machine account's
+# group is added automatically when `accounts_machine_mode: machine`; with the
+# default `none` it does not exist. Emptying this means "anyone with a key",
+# which is the wrong end state even when it is the safe default.
+# A session that never answers is closed: 300 s of silence, two probes. A machine
+# that lost its Wi-Fi does not keep a half-open connection (and its agent) alive
+# for ever -- measured on a converted laptop, where a dropped link left sessions
+# that the server still believed open.
+security_sshd_client_alive_interval: 300
+security_sshd_client_alive_count_max: 2
+
+# Two channels per connection: enough for a session and a tunnel, and it stops a
+# single login from opening an unbounded number of them.
+security_sshd_max_sessions: 2
+
+security_sshd_allow_groups:
+  - sudo
+
+# The password policy. It bites only when a password is set: the product's
+# accounts are key-only, so this governs the day a human deliberately makes one.
+# The audit found PASS_MAX_DAYS 99999 and no pwquality at all.
+security_password_min_length: 12
+security_password_max_days: 365
+security_password_min_days: 1
+security_password_warn_days: 7
+
+# No password hash work factor is declared. an earlier release wrote `SHA_CRYPT_ROUNDS` here,
+# and it is not a login.defs(5) key: yescrypt's cost is `YESCRYPT_COST_FACTOR`,
+# and `SHA_CRYPT_MIN_ROUNDS`/`SHA_CRYPT_MAX_ROUNDS` apply only to SHA-256 and
+# SHA-512. The value changed nothing and made every shadow tool warn, so a later release
+# retired the key and leaves libxcrypt's default yescrypt cost, as the server
+# product does.
+security_password_reject_userinfo: true
+
+# Brute-force lockout. `pam_faillock`: after `deny`
+# failures an account is locked for `unlock_time` seconds. `even_deny_root` is
+# deliberately NOT set -- root is never locked, so a recovery path always exists.
+security_faillock_deny: 5
+security_faillock_unlock_time: 900
+security_faillock_pam_config: /usr/share/pam-configs/workstation-faillock
+security_faillock_conf: /etc/security/faillock.conf
+
+security_sshd_service_dropin_dir: /etc/systemd/system/ssh.service.d
+# Kept only so the role can ensure NO sandbox drop-in is left behind (decision
+# 0026): a systemd sandbox on sshd is inherited by sessions and breaks apt.
+security_sshd_service_dropin: "{{ security_sshd_service_dropin_dir }}/10-workstation.conf"
+
+# Whether the SSH source restriction is REQUIRED. An empty list
+# used to render `tcp dport 22 accept` from anywhere, silently: a production
+# inventory that forgot the variable exposed sshd to the world. Now an empty list
+# must be a DECISION, not an omission.
+security_ssh_sources_required: true
+security_ssh_sources_anywhere: false

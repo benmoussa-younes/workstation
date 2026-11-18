@@ -1,0 +1,59 @@
+---
+argument_specs:
+  main:
+    short_description: The host's stub resolver, owned by systemd-resolved.
+    description:
+      - Installs and configures systemd-resolved, and lets the stub own
+        /etc/resolv.conf.
+    author: Younes BENMOUSSA
+    options:
+      resolver_conf_dir:
+        type: str
+        required: false
+        description: The resolved drop-in directory.
+      resolver_conf_file:
+        type: str
+        required: false
+        description: The drop-in file name.
+      resolver_fallback_dns:
+        type: list
+        elements: str
+        required: false
+        description: Global fallback servers; empty keeps queries on this host's resolver.
+      resolver_dns_over_tls:
+        type: bool
+        required: false
+        description: Whether to require DNS-over-TLS to the upstream.
+      resolver_dnssec:
+        type: str
+        required: false
+        description: The DNSSEC validation mode.
+        choices: ["yes", "no", "allow-downgrade"]
+      resolver_llmnr:
+        type: bool
+        required: false
+        description: Whether LLMNR answers on 5355 (off on a server).
+      resolver_multicast_dns:
+        type: bool
+        required: false
+        description: Whether mDNS answers on 5353 (off on a server).
+      resolver_manage_resolv_conf:
+        type: bool
+        required: false
+        description: Whether the stub owns /etc/resolv.conf.
+      resolver_resolv_conf:
+        type: str
+        required: false
+        description: The live resolv.conf path.
+      resolver_resolv_conf_backup:
+        type: str
+        required: false
+        description: Where the installer's resolv.conf is preserved.
+      resolver_stub_resolv_conf:
+        type: str
+        required: false
+        description: The stub's resolv.conf that the symlink points at.
+      resolver_dropin:
+        type: str
+        required: false
+        description: The resolver_dropin the role declares (defaults/main.yml).

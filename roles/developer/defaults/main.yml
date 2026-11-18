@@ -1,0 +1,153 @@
+---
+# The declared developer tool groups.
+#
+# The site selects group names in `developer_tools`; an empty list installs
+# nothing. A name outside `developer_tool_groups` fails the run. Removing a
+# group from the list does not uninstall its packages: this role installs and
+# reads back what it declares, and leaves every removal to the operator.
+#
+# The product installs Debian packages only, with one declared exception:
+# `dotnet-sdk-10.0` comes from Microsoft's official Debian repository, whose
+# key and source are pinned below. There is no Node, Rust or Go group and no
+# LaTeX group: the studio writes .NET, the `python` group is the venv tool
+# rather than a toolchain, and a LaTeX stack is a site choice. The JRE is kept
+# for Java tools. No editor is installed by default: `nano` is common's editor,
+# and VSCodium is the opt-in `vscodium` group below.
+developer_tools: []
+
+# The one package from Microsoft's feed, named once: the catalogue, the
+# Debian-only list and the install all read this variable, so a version bump is
+# a single edit and cannot leave the three lists disagreeing.
+developer_dotnet_package: dotnet-sdk-10.0
+
+developer_tool_groups:
+  build:
+    - build-essential
+    - cmake
+    - meson
+    - ninja-build
+    - pkgconf
+    - autoconf
+    - automake
+    - libtool
+    - bison
+    - flex
+    - gettext
+  debug:
+    - gdb
+    - strace
+    - ltrace
+    - valgrind
+    - linux-perf
+    - bpftrace
+  clang:
+    - clang
+    - lld
+    - lldb
+    - clang-format
+    - clang-tidy
+  dotnet:
+    - "{{ developer_dotnet_package }}"  # Microsoft's repository; see below
+    - clang             # Native AOT's linker driver
+    - zlib1g-dev        # Native AOT's zlib headers
+  search:
+    - ripgrep
+    - fd-find
+    - bat
+    - fzf
+  lint:
+    - shellcheck
+    - yamllint
+    - reuse
+  ansible:
+    - ansible
+    - ansible-lint
+  database:
+    - sqlite3
+    - postgresql-client
+    - redis-tools
+    - mariadb-client
+  python:
+    - python3-venv
+  network:
+    - nmap
+    - tshark
+    - socat
+    - netcat-openbsd
+    - iperf3
+  packaging:
+    - devscripts
+    - debhelper
+    - dpkg-dev
+    - fakeroot
+    - reprepro
+    - sqv
+    - sbsigntool
+    - cosign
+  bench:
+    - fio
+    - sysbench
+    - iotop
+  test:
+    - xvfb
+    - xclip
+    - xdotool
+  shell:
+    - tree
+    - 7zip
+    - hyperfine
+  docs:
+    - pandoc
+    - graphviz
+    - tesseract-ocr
+    - tesseract-ocr-fra
+    - imagemagick
+  jre:
+    - default-jre
+  vscodium: []   # the editor from VSCodium's own feed; handled below
+  scripts: []    # the Scripts interpreter from its GitHub release; handled below
+
+developer_package_cache_valid_time: 3600
+
+# Microsoft's .NET repository. The key is carried by the official
+# `packages-microsoft-prod.deb`, pinned by SHA-256 and read back by fingerprint;
+# the repository is declared only when `dotnet` is selected. `.NET` is MIT, and
+# this is the only package the product takes from that feed.
+developer_dotnet_base: https://packages.microsoft.com
+developer_dotnet_os: "debian/{{ identity_debian_major | default('') }}"
+developer_dotnet_repo_url: "{{ developer_dotnet_base }}/{{ developer_dotnet_os }}/prod"
+developer_dotnet_repo_suite: "{{ identity_debian_release_name | default('') }}"
+developer_dotnet_repo_component: main
+developer_dotnet_repo_file: /etc/apt/sources.list.d/microsoft-dotnet.list
+developer_dotnet_key_url: "{{ developer_dotnet_base }}/config/{{ developer_dotnet_os }}/packages-microsoft-prod.deb"
+developer_dotnet_key_checksum: "sha256:d0c2f69250c6ce0d4c6220b142f999d039a3c560af7f980b943687d106ca8e38"
+developer_dotnet_key_fingerprint: "AA86F75E427A19DD33346403EE4D7792F748182B"
+developer_dotnet_key_path: /etc/apt/keyrings/microsoft-dotnet.gpg
+developer_dotnet_cache_dir: /var/cache/workstation
+developer_dotnet_deb: "{{ developer_dotnet_cache_dir }}/packages-microsoft-prod.deb"
+developer_dotnet_key_source: >-
+  {{ developer_dotnet_cache_dir }}/microsoft-prod/usr/share/keyrings/microsoft-prod.gpg
+
+# VSCodium: no Debian package. The role adds VSCodium's official APT repository
+# only when the `vscodium` group is selected, pins the key by checksum and
+# fingerprint, installs `codium`, and reads it back. The Flatpak is deliberately
+# not used: the editor must see the host's .NET SDK and toolchain.
+developer_vscodium_package: codium
+developer_vscodium_key_url: https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg
+developer_vscodium_key_checksum: "sha256:dbdfd9af3b83b72a24c89160ce7638418142e2cf4736ab53e5061e10070f13c1"
+developer_vscodium_key_fingerprint: "1302DE60231889FE1EBACADC54678CF75A278D9C"
+developer_vscodium_key_path: /etc/apt/keyrings/vscodium.gpg
+developer_vscodium_repo_url: https://download.vscodium.com/debs
+developer_vscodium_repo_suite: vscodium
+developer_vscodium_repo_component: main
+developer_vscodium_repo_file: /etc/apt/sources.list.d/vscodium.list
+
+# Scripts: the interpreter this studio writes, published on GitHub. The role
+# installs the latest release (or a pinned `developer_scripts_version`) from the
+# release's Debian package, verifies it against the release's SHA256SUMS, and
+# reads `scripts --version` back. It is opt-in through the `scripts` group.
+developer_scripts_version: "latest"
+developer_scripts_repo: "benmoussa-younes/scripts"
+developer_scripts_api: "https://api.github.com/repos/{{ developer_scripts_repo }}/releases"
+developer_scripts_arch: amd64
+developer_scripts_cache_dir: /var/cache/workstation/scripts

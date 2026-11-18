@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The wired profile NetworkManager uses from the next boot. `boot` mode leaves
+# the running ifupdown in place; this file is what NetworkManager finds when the
+# machine boots without it.
+#
+# `method=auto` only when the installer's stanza was `inet dhcp`: the lease
+# carries the resolver the desktop needs. A wired static stanza (and every Wi-Fi
+# profile) stays `manual`, carries the running address, and takes its resolver
+# from `dns=` or systemd-resolved's global fallback.
+[connection]
+id={{ network_boot_connection_name }}
+uuid={{ network_boot_profile_uuid }}
+type=ethernet
+interface-name={{ network_handover_devices[0] }}
+autoconnect=true
+autoconnect-priority=100
+
+[ethernet]
+wake-on-lan=ignore
+
+[ipv4]
+method={{ network_boot_method }}
+{% if network_boot_method == 'manual' %}
+address1={{ network_boot_address_cidr }}
+gateway={{ network_boot_gateway_address }}
+{% if network_boot_dns | length > 0 %}
+dns={{ network_boot_dns | join(';') }};
+{% endif %}
+{% endif %}
+may-fail=false
+
+[ipv6]
+method=auto
+may-fail=true

@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The default handler per MIME type, for every account. `/etc/xdg/mimeapps.list`
+# is the XDG system default; a user's own file takes precedence, which is why
+# the product declares the machine's and never writes the account's.
+#
+# Without this file a fresh Debian has no `mimeapps.list` at all and `xdg-open`
+# picks whichever application last claimed the type (measured on the desktop
+# site, 2026-11-11: `xdg-mime query default image/png` answered PDF Arranger).
+[Default Applications]
+{% for mime in applications_mimeapps_defaults | dict2items %}
+{{ mime.key }}={{ mime.value }}
+{% endfor %}

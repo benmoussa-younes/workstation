@@ -1,0 +1,15 @@
+---
+- name: Reload NetworkManager
+  ansible.builtin.systemd_service:
+    name: NetworkManager.service
+    state: reloaded
+  # In check mode the package install is only SIMULATED, so the unit may not
+  # exist yet: naming it fails the dry run. On a site-managed Wi-Fi profile the
+  # role must not touch the running daemon at all: a reload re-reads the
+  # profile and, on the first real conversion, dropped the only link. The
+  # drop-ins take effect at the next NetworkManager restart; the read-back below
+  # is what decides, not a reload.
+  when:
+    - not ansible_check_mode
+    - network_effective_apply | default('verify') == 'live'
+    - network_profile_managed | bool

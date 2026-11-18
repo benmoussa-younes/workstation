@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# An unattended session. A workstation in a locked room may log in on its own; a
+# workstation in a shared office must not, and `display_manager_autologin` is
+# false there.
+[daemon]
+AutomaticLoginEnable=True
+AutomaticLogin={{ display_manager_autologin_user }}

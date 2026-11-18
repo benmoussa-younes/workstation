@@ -1,0 +1,8 @@
+---
+# The runtime contract.
+#
+# `roles` and `playbooks` are the plugin types this product ships. The roles use
+# `ansible.builtin.getent`, `ansible.builtin.systemd_service` and the modern
+# `ansible.builtin.apt`/`template` interfaces, so an older ansible-core says so
+# plainly instead of failing on a filter.
+requires_ansible: ">=2.19.0"

@@ -1,0 +1,18 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The host's NTP client. The declared servers are the ONLY source: a host that
+# takes its time from a public pool beside them is a defect, not a fallback.
+#
+# IMPORTANT -- why no public pool:
+# `systemd-timesyncd` has NO server preference. A pool listed in `NTP=` beside
+# the declared servers is a co-equal candidate; at boot, when the declared
+# servers are restarting, the client picks the pool and then never returns
+# (measured after a reboot). `FallbackNTP=` is no help either: per
+# timesyncd.conf(5) it is consulted only when `NTP=` is empty. A fallback is
+# therefore an explicit opt-in (`time_client_fallback_pools`), and the
+# consequence -- a stale clock if every declared server is absent -- is accepted
+# and written down. An empty list is refused by the role, never rendered silently.
+[Time]
+NTP={{ time_effective_servers | join(' ') }}
+FallbackNTP={{ time_client_fallback_pools | join(' ') }}

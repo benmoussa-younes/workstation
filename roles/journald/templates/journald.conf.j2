@@ -1,0 +1,16 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# `Storage=persistent` is declared, not inherited: Debian's default is `auto`,
+# which is persistent only if `/var/log/journal` happens to exist at boot, so
+# the bounds below would silently stop applying on a host without it.
+[Journal]
+Storage={{ journald_storage }}
+SystemMaxUse={{ journald_system_max_use }}
+SystemMaxFileSize={{ journald_system_max_file_size }}
+SystemMaxFiles={{ journald_system_max_files }}
+MaxRetentionSec={{ journald_max_retention_sec }}
+Compress={{ 'yes' if journald_compress else 'no' }}
+# Debian forces `yes` from its own drop-in; two readers would see each line
+# twice, and the syslog copy would escape the bounds above.
+ForwardToSyslog={{ 'yes' if journald_forward_to_syslog else 'no' }}

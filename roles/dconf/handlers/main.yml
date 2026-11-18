@@ -1,0 +1,10 @@
+---
+# The session reads the COMPILED database, so a keyfile written without
+# `dconf update` changes nothing. This handler is the only place the compile runs,
+# and it runs only when a profile, a keyfile or a lock file changed -- a converge
+# that declared nothing new must not report a change here.
+- name: Update the dconf database
+  ansible.builtin.command:
+    cmd: dconf update
+  changed_when: true
+  when: not ansible_check_mode

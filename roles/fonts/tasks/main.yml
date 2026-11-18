@@ -1,0 +1,46 @@
+---
+# The declared font families, installed and proved.
+#
+# The proof is the point of this role: `apt` reporting `fonts-inter` installed
+# says a file landed on disk, not that the desktop renders with Inter. fontconfig
+# silently substitutes a family it cannot find, so the family NAME is read back
+# from `fc-match` and compared with the family that was asked for.
+
+- name: The declared font families are installed
+  ansible.builtin.apt:
+    name: "{{ fonts_packages }}"
+    state: present
+    cache_valid_time: 3600
+  notify: Rebuild the font cache
+
+# The handler runs before the proof: `fc-match` answers from the cache fontconfig
+# just rebuilt, so a family installed a moment ago resolves now.
+- name: The font cache is rebuilt before the proof
+  ansible.builtin.meta: flush_handlers
+
+# The default `fc-match` format is `<file>: "<Family>" "<Style>"`; the family is
+# in the answer, so the assertion below can read it without a custom format
+# string (which needs its own escaping through YAML and `shlex`).
+- name: The family each declared name resolves to is read
+  ansible.builtin.command:
+    cmd: "{{ fonts_match_command }} {{ item | quote }}"
+  loop: "{{ fonts_expected }}"
+  loop_control:
+    label: "{{ item }}"
+  register: fonts_matched
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Every declared family resolves to itself
+  ansible.builtin.assert:
+    that:
+      - item.item | lower in item.stdout | lower
+    fail_msg: >-
+      {{ inventory_hostname }}: `fc-match {{ item.item }}` answers
+      `{{ item.stdout | trim }}`, which does not name `{{ item.item }}`. The
+      family is missing -- check that its package is in `fonts_packages` -- or a
+      fontconfig rule replaces it.
+  loop: "{{ fonts_matched.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode

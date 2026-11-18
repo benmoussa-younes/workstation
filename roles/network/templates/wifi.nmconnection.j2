@@ -1,0 +1,47 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Wi-Fi profile NetworkManager uses from the next boot (a wired interface
+# uses `ethernet.nmconnection.j2`). The keyfile plugin
+# reads `/etc/NetworkManager/system-connections/*` and ignores a file any user
+# other than root can read or write; this one is 0600 root:root.
+#
+# The address is the one the site declares (`network_boot_address`), or the one
+# the running link carries when it declares none. `method=manual` takes no DHCP
+# lease, so the resolver comes from `dns=` when `network_boot_dns` is declared,
+# and from systemd-resolved's global fallback otherwise.
+#
+# `boot` mode leaves the running ifupdown in place: this file is not activated
+# by the converge, it is what NetworkManager finds when the machine boots without
+# ifupdown. `auto` on the next run verifies the result.
+[connection]
+id={{ network_boot_connection_name }}
+uuid={{ network_boot_profile_uuid }}
+type=wifi
+interface-name={{ network_handover_devices[0] }}
+autoconnect=true
+autoconnect-priority=100
+
+[wifi]
+mode=infrastructure
+ssid={{ network_wifi_ssid_effective }}
+security=802-11-wireless-security
+powersave={{ network_boot_powersave }}
+
+[wifi-security]
+key-mgmt=wpa-psk
+# The derived key, not the passphrase: `wpa_passphrase`'s PBKDF2-SHA1 value.
+psk={{ network_wifi_psk_hashed }}
+
+[ipv4]
+method=manual
+address1={{ network_boot_address_cidr }}
+gateway={{ network_boot_gateway_address }}
+{% if network_boot_dns | length > 0 %}
+dns={{ network_boot_dns | join(';') }};
+{% endif %}
+may-fail=false
+
+[ipv6]
+method=auto
+may-fail=true

@@ -1,0 +1,80 @@
+---
+- name: The host uses systemd
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.service_mgr == 'systemd'
+    fail_msg: "{{ inventory_hostname }} does not use systemd."
+
+- name: The journald drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ journald_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# `Storage=persistent` alone does not keep a single line: systemd writes to
+# `/var/log/journal` only when the directory exists, and Debian does not create
+# it. Without this task every log is lost at the next boot, so a crash has no
+# post-mortem -- measured on a converted machine (2026-10-20), where the
+# directory was absent.
+- name: The persistent journal directory exists
+  ansible.builtin.file:
+    path: /var/log/journal
+    state: directory
+    owner: root
+    group: systemd-journal
+    mode: "2755"
+  when: journald_storage == 'persistent'
+
+- name: The journald drop-in is present
+  ansible.builtin.template:
+    src: journald.conf.j2
+    dest: "{{ journald_dropin_dir }}/{{ journald_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-journald
+
+# The directory this role declares in is owned: a drop-in it does not declare
+# merges with its own and can contradict it. Measured on a converted machine
+# (2026-10-20): a `90-` drop-in left by the engine that ran there before set
+# 64M / 7d beside this role's 500M / 1month, and each key was resolved by
+# whichever file came later. A `--check` diff cannot show it, because the
+# conflict is in the directory, not in the run.
+#
+# The declaration is the whole policy, so anything else is retired -- renamed,
+# never deleted, so it can be read back.
+- name: The journal drop-ins already present are listed
+  ansible.builtin.find:
+    paths: "{{ journald_dropin_dir }}"
+    patterns: "*.conf"
+    file_type: file
+  register: journald_existing
+
+# Only a file NO PACKAGE owns is retired: the distribution's own drop-ins are
+# not this role's to remove, and a package would restore them on its next
+# upgrade. What another engine left is owned by nobody, and is what must go.
+- name: The journal drop-ins are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ journald_existing.files | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('equalto', journald_dropin_dir ~ '/' ~ journald_dropin_name)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: journald_owner
+  changed_when: false
+  failed_when: false
+
+- name: The journal drop-ins no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: "{{ journald_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+  notify: Restart systemd-journald

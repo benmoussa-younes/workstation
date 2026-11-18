@@ -1,0 +1,252 @@
+---
+argument_specs:
+  main:
+    short_description: The profile-wide GNOME policy, as dconf data.
+    description:
+      - >-
+        Installs `dconf-cli`, declares the session's dconf profile, writes the
+        system-wide keyfiles (appearance, screen lock and idle, privacy, the
+        extension set and the pinned applications) and the locks that make the
+        declared keys non-overridable, compiles the database through a handler,
+        then reads every declared value back from the compiled database through
+        the profile a session uses. GDM's logo is NOT declared here: it is a
+        greeter key owned by the `display` role.
+    author: Younes BENMOUSSA
+    options:
+      dconf_package:
+        type: str
+        required: false
+        description: The dconf command-line package (`dconf-cli`).
+      dconf_profile_dir:
+        type: str
+        required: false
+        description: The directory of dconf profiles.
+      dconf_profile_file:
+        type: str
+        required: false
+        description: >-
+          The profile a session reads. It must declare `system-db:local`, or the
+          policy and its locks are never read.
+      dconf_db_dir:
+        type: str
+        required: false
+        description: >-
+          The system database's keyfile directory. Every file in it is compiled,
+          whatever its name.
+      dconf_database:
+        type: str
+        required: false
+        description: >-
+          The compiled database. It is made 0644: a session runs as the account
+          and cannot read the 0640 file `dconf update` writes by default.
+      dconf_locks_dir:
+        type: str
+        required: false
+        description: The lock file directory of the same database.
+      dconf_wallpaper:
+        type: str
+        required: false
+        description: >-
+          The wallpaper the policy selects. The file is installed by the
+          `branding` role; this role only names and checks it.
+      dconf_wallpaper_uri:
+        type: str
+        required: false
+        description: The `file://` URI the background keys take, derived from the path.
+      dconf_wallpaper_options:
+        type: str
+        required: false
+        description: The background's `picture-options` value (`zoom`).
+      dconf_background_shading:
+        type: str
+        required: false
+        description: The background's `color-shading-type` (`solid`).
+      dconf_background_color:
+        type: str
+        required: false
+        description: The primary and secondary background colour.
+      dconf_color_scheme:
+        type: str
+        required: false
+        description: The GTK colour scheme (`prefer-dark`).
+      dconf_accent_color:
+        type: str
+        required: false
+        description: The GNOME accent colour (`green`).
+      dconf_gtk_theme:
+        type: str
+        required: false
+        description: The GTK theme name.
+      dconf_icon_theme:
+        type: str
+        required: false
+        description: The icon theme name.
+      dconf_cursor_theme:
+        type: str
+        required: false
+        description: The cursor theme name.
+      dconf_cursor_size:
+        type: int
+        required: false
+        description: The cursor size (an int32 key).
+      dconf_button_layout:
+        type: str
+        required: false
+        description: The window button layout.
+      dconf_font_name:
+        type: str
+        required: false
+        description: >-
+          The interface font. A family the `fonts` role does not install is a
+          fontconfig fallback, which looks like the wrong font, not a missing one.
+      dconf_document_font_name:
+        type: str
+        required: false
+        description: The document font.
+      dconf_monospace_font_name:
+        type: str
+        required: false
+        description: The monospace font (terminal and code).
+      dconf_clock_format:
+        type: str
+        required: false
+        description: The clock format (`24h`).
+      dconf_clock_show_date:
+        type: bool
+        required: false
+        description: Whether the clock shows the date.
+      dconf_clock_show_weekday:
+        type: bool
+        required: false
+        description: Whether the clock shows the weekday.
+      dconf_lock_enabled:
+        type: bool
+        required: false
+        description: Whether the screen locks when the session goes idle.
+      dconf_lock_delay:
+        type: int
+        required: false
+        description: Seconds between the blank and the lock (a uint32 key).
+      dconf_idle_delay:
+        type: int
+        required: false
+        description: Seconds of inactivity before the screen blanks (a uint32 key).
+      dconf_sleep_ac:
+        type: str
+        required: false
+        description: What the session does on AC power when idle (`nothing`).
+      dconf_sleep_battery:
+        type: str
+        required: false
+        description: What the session does on battery when idle (`nothing`).
+      dconf_sleep_ac_timeout:
+        type: int
+        required: false
+        description: The AC idle timeout (0 disables it).
+      dconf_sleep_battery_timeout:
+        type: int
+        required: false
+        description: The battery idle timeout (0 disables it).
+      dconf_privacy_remember_recent_files:
+        type: bool
+        required: false
+        description: Whether recently used files are recorded.
+      dconf_privacy_remember_app_usage:
+        type: bool
+        required: false
+        description: Whether application usage is recorded.
+      dconf_privacy_send_software_usage_stats:
+        type: bool
+        required: false
+        description: Whether software usage statistics are sent.
+      dconf_privacy_report_technical_problems:
+        type: bool
+        required: false
+        description: Whether technical problem reports are enabled.
+      dconf_privacy_remove_old_temp_files:
+        type: bool
+        required: false
+        description: Whether old temporary files are removed.
+      dconf_privacy_remove_old_trash_files:
+        type: bool
+        required: false
+        description: Whether old trash is removed.
+      dconf_privacy_old_files_age:
+        type: int
+        required: false
+        description: Days after which temporary files and trash are removed (a uint32 key).
+      dconf_privacy_show_full_name_in_top_bar:
+        type: bool
+        required: false
+        description: Whether the full name is shown in the top bar.
+      dconf_privacy_usb_protection:
+        type: bool
+        required: false
+        description: Whether the USB guard is active while the screen is locked.
+      dconf_privacy_usb_protection_level:
+        type: str
+        required: false
+        description: When the USB guard applies (`lockscreen`).
+      dconf_privacy_disable_external_search:
+        type: bool
+        required: false
+        description: >-
+          Whether external search providers are disabled. True: the desktop stack
+          makes no network request.
+      dconf_app_folders:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          The GNOME application-grid folders, as `{id, name, apps}`. The
+          product declares Utilities, System, Media, Office, Graphics and
+          Internet; the user may rearrange them, so the keys are not locked.
+      dconf_favorite_apps:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The desktop ids pinned to the dash, in order. The `applications` role
+          installs and checks the same set; these keys are not locked.
+      dconf_favorite_apps_absent:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Desktop ids that must NOT appear in the pinned set (applications the
+          product does not ship). The read-back asserts their absence.
+      dconf_extensions:
+        type: list
+        elements: str
+        required: false
+        description: The GNOME Shell extension UUIDs that are enabled and locked.
+      dconf_allow_extension_installation:
+        type: bool
+        required: false
+        description: Whether the session may install extensions (false).
+      dconf_keyfiles:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          The keyfiles the role writes, as a template source and a destination
+          file name. The name decides the compile order.
+      dconf_locks:
+        type: dict
+        required: false
+        description: >-
+          The lock files, by file name: each value is the list of key paths that
+          are read-only for the user.
+      dconf_desktop_dir:
+        type: str
+        required: false
+        description: >-
+          The directory Debian's packaged desktop entries live in; the pinned ids
+          are checked against it.
+      dconf_readback:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          The values the role reads back from the compiled database: a key path
+          and the fragments that must appear in `dconf read`'s answer.

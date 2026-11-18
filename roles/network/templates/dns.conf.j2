@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Which resolver NetworkManager hands its DNS to.
+#
+# `systemd-resolved` is the host's stub (the `resolver` role owns
+# `/etc/resolv.conf` -> `/run/systemd/resolve/stub-resolv.conf`). With
+# `dns=default`, NetworkManager would rewrite that file itself and start a
+# private `dnsmasq`, and the stub -- the thing `resolvectl` reports -- would see
+# no upstream at all. The drop-in makes the hand-over explicit.
+[main]
+dns={{ network_manager_dns }}
+#
+# The connectivity check is a network request from the desktop stack. AGENTS.md
+# forbids one: `none` keeps Debian's default, and every link state is what the
+# kernel and the access point report, not a verdict from a third party.
+{% if network_connectivity_check == 'debian' %}
+[connectivity]
+enabled=true
+uri=http://network-test.debian.org/nm
+response=NetworkManager%20is%20online
+interval=0
+{% else %}
+[connectivity]
+enabled=false
+{% endif %}

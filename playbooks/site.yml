@@ -1,0 +1,288 @@
+---
+# The Workstation GNOME desktop.
+#
+# This collection owns the desktop machine. It is applied to a Debian amd64
+# host where the human account already exists (the installer or the server base
+# created it); it adds the desktop groups, the GNOME session, the display
+# manager, the branding and the declared applications. It also re-declares the
+# base decisions a desktop must diverge from (the link's owner, the Bluetooth
+# modules, the identity).
+#
+# A host that is not Debian amd64 or has no declared account is refused before a
+# role runs.
+- name: Workstation desktop
+  hosts: "{{ target | default('all') }}"
+  become: true
+  gather_facts: true
+  pre_tasks:
+    # `/etc/os-release` is the product's own output once the identity role has
+    # run, and a server identity carries VERSION_ID=0.1.0. The distribution
+    # release is therefore read from `/etc/debian_version`, the marker the
+    # identity role never writes.
+    - name: The Debian release marker is read
+      ansible.builtin.slurp:
+        src: /etc/debian_version
+      register: workstation_debian_release
+
+    - name: The host is the Debian base this product supports
+      ansible.builtin.assert:
+        that:
+          - (workstation_debian_release.content | b64decode | trim).split('.')[0] is match('^[0-9]+$')
+          - ansible_facts['architecture'] == 'x86_64'
+        fail_msg: >-
+          This product needs Debian amd64. Another release or architecture is
+          refused, not guessed.
+        success_msg: The Debian base and the architecture hold.
+
+    - name: The declared account is named
+      ansible.builtin.assert:
+        that:
+          - workstation_user | default('') | length > 0
+        fail_msg: >-
+          Declare the human account this workstation serves: workstation_user
+          is empty. The product adds the account's desktop groups and locale; it
+          does not create the account.
+
+    - name: The declared account exists
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: getent passwd {{ workstation_user | quote }}
+      register: workstation_account
+      changed_when: false
+      failed_when: false
+
+    - name: The account is the site's
+      ansible.builtin.assert:
+        that:
+          - workstation_account.rc == 0
+        fail_msg: >-
+          {{ inventory_hostname }} has no account `{{ workstation_user }}`.
+          Create it at install time, or declare the account that exists.
+
+  roles:
+    # The package baseline, the periodic security upgrades and the shared
+    # directories. The role also withdraws the server's Bluetooth mask.
+    - role: common
+      tags: [common]
+
+    # The product's name on the machine: os-release, `/etc/issue`, the login
+    # banner. `identity_product` is `workstation-gnome`, never the server's.
+    - role: identity
+      tags: [identity]
+
+    # The journal is bounded before the desktop writes to it: a desktop produces
+    # more log lines per hour than a server of the same size.
+    - role: journald
+      tags: [journald]
+
+    # The console keyboard, and GRUB's copy of it. GDM reads the same
+    # `/etc/default/keyboard` for its layout.
+    - role: keyboard
+      tags: [keyboard]
+
+    # The kernel and system policy, with Bluetooth loadable, `graphical.target`
+    # declared, the kernel command line's `splash` and the reboot policy.
+    - role: hardening
+      tags: [hardening]
+
+    # The declared tuning (swappiness, THP, dirty bytes, TCP). It sorts BEFORE
+    # `60-hardening.conf` on purpose and never declares a hardening key.
+    - role: performance
+      tags: [performance]
+
+    # The link's owner: NetworkManager, and no systemd-networkd beside it. On a
+    # Wi-Fi site that already handed the radio over by hand, the inventory says
+    # `network_profile_managed: false`; the role then verifies and never writes
+    # a wired profile over the site's.
+    - role: network
+      tags: [network]
+
+    # The stub resolver, taking the link's DNS from NetworkManager.
+    - role: resolver
+      tags: [resolver]
+
+    # Exactly one time daemon.
+    - role: time
+      tags: [time]
+
+    # The desktop itself: `gnome-core` and Debian's desktop task, and no other
+    # desktop. `gnome-core` installs GDM, the GNOME shell and PipeWire.
+    - role: gnome
+      tags: [gnome]
+
+    # The human account's desktop groups, locale and the Bluetooth daemon. It
+    # runs after the packages that create the groups, and before GDM is enabled.
+    - role: desktop
+      tags: [desktop]
+
+    # The declared font families and the fontconfig proof.
+    - role: fonts
+      tags: [fonts]
+
+    # The declared applications and GNOME Shell extensions. Debian packages
+    # first; the site's Mozilla Firefox is kept, never replaced by firefox-esr.
+    - role: applications
+      tags: [applications]
+
+    # The declared developer tool groups. Debian packages first, plus the .NET
+    # SDK from Microsoft's official repository when `dotnet` is selected; no
+    # editor, dotfile or service.
+    - role: developer
+      tags: [developer]
+
+    # The coding agents, for the human account: OpenCode from the vendor's
+    # installer, the machine-wide configuration and the PATH drop-in. It runs
+    # after `common` (curl/tar) and after `applications` (the editor).
+    - role: coding_agents
+      tags: [coding_agents]
+
+    # The opt-in gaming stack: Debian's Steam installer, the controller rules,
+    # gamemode/mangohud and the 32-bit mesa/vulkan stack. It is inert unless the
+    # site sets `gaming_enabled: true`; the package sources must serve Debian
+    # `contrib` and i386, and the role fails with a message naming both when
+    # they do not.
+    - role: gaming
+      tags: [gaming]
+
+    # The optional local virtualization stack: libvirt/virt-manager and
+    # rootless Podman. It creates no VM and no container; the Podman tasks keep
+    # their own tag.
+    - role: virtualization
+      tags: [virtualization]
+
+    # The wallpaper, GDM's logo and the GRUB image, from this product's own
+    # assets. It runs before `dconf` (which points at the wallpaper) and before
+    # `display` (whose greeter key names the logo).
+    - role: branding
+      tags: [branding]
+
+    # The profile-wide GNOME policy as data: appearance, wallpaper, screen lock,
+    # privacy, extensions, favorite applications. It runs after the packages and
+    # files its keys name.
+    - role: dconf
+      tags: [dconf]
+
+    # PipeWire is declared by `gnome-core`; this role states the package set
+    # explicitly and the proof after login is in the README.
+    - role: audio
+      tags: [audio]
+
+    # CUPS and the virtual PDF queue. A physical printer is site data and is not
+    # invented here.
+    - role: printing
+      tags: [printing]
+
+    # GDM: the unit, the session type in `daemon.conf`, the greeter's logo key,
+    # and the seat read back. Its handler restarts the display manager, which
+    # ends a running session: this play is run over SSH.
+    - role: display
+      tags: [display]
+
+    # The boot splash, after `hardening` declared `splash` and after `branding`
+    # installed the image the menu names.
+    - role: plymouth
+      tags: [plymouth]
+
+    # The firewall and sshd. It runs LAST: it owns the nftables input chain, and
+    # the rules depend on what the other roles declared. It opens no port the
+    # desktop did not declare.
+    - role: security
+      tags: [security]
+
+  post_tasks:
+    # Avahi is masked after every package install: `gnome` and `printing` pull
+    # it through Recommends, and a mask written before them is a change on the
+    # next converge.
+    - name: The desktop services are finalized
+      ansible.builtin.import_role:
+        name: common
+        tasks_from: finalize.yml
+      tags: [common]
+
+    # The site's address is only proved by the boot that uses it: the keyfile
+    # written above is read by NetworkManager at boot, not by this run. The
+    # machine comes back at the address the site declared, so the proof play
+    # reconnects there, not at the address this converge used. A host already
+    # on NetworkManager (`verify`) has nothing to prove and is not rebooted.
+    - name: The boot proof keeps the address it must find
+      ansible.builtin.set_fact:
+        workstation_boot_device: "{{ network_handover_devices[0] }}"
+        workstation_boot_cidr: "{{ network_boot_address_cidr | default('') }}"
+        workstation_boot_address: >-
+          {{ network_boot_address_cidr | default('') | split('/') | first }}
+        workstation_boot_gateway: "{{ network_boot_gateway_address | default('') }}"
+      when: network_effective_apply | default('') in ['boot', 'boot_pending']
+
+    # A handler still queued here would run at the end of the play -- after the
+    # reboot -- and its connection would fail, taking the proof play down with
+    # it (measured on the laptop, 2026-11-18: `Reload systemd` notified by the
+    # Avahi retirement in `post_tasks`, UNREACHABLE on the rebooting host).
+    - name: The handlers queued by the converge run before the reboot
+      ansible.builtin.meta: flush_handlers
+
+    - name: The machine reboots into the declared network
+      # `async` + `poll: 0`: the reboot ends the SSH session this task runs on,
+      # so its result cannot be read back; the proof is the play below.
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: systemctl reboot
+      async: 1
+      poll: 0
+      changed_when: true
+      failed_when: false
+      when:
+        - workstation_reboot_after | default(false) | bool
+        # `boot_pending` is the same machine one run later: the keyfile is
+        # written and the reboot is what makes NetworkManager read it.
+        - network_effective_apply | default('') in ['boot', 'boot_pending']
+        - network_boot_address | default('') | length > 0
+
+# The address the site declared is only proved by the boot that uses it. This
+# play reconnects at that address -- the inventory may still name the DHCP lease
+# the first run used -- and reads the link back. A machine that boots behind a
+# LUKS passphrase waits here until the passphrase is typed at the console: the
+# timeout is the console operator's window.
+- name: Workstation boot proof
+  hosts: "{{ target | default('all') }}"
+  become: true
+  gather_facts: false
+  vars:
+    ansible_host: "{{ workstation_boot_address | default('') }}"
+  tasks:
+    - name: The run has a reboot to prove
+      ansible.builtin.meta: end_play
+      when: >-
+        not (workstation_reboot_after | default(false) | bool)
+        or (network_effective_apply | default('') not in ['boot', 'boot_pending'])
+        or workstation_boot_address | default('') | length == 0
+
+    - name: The declared address answers again
+      ansible.builtin.wait_for_connection:
+        delay: 30
+        timeout: 900
+
+    - name: The link of the booted machine is read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: ip -o -4 addr show dev {{ workstation_boot_device }} scope global
+      register: workstation_boot_link
+      changed_when: false
+
+    - name: The default route of the booted machine is read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: ip -4 route show default
+      register: workstation_boot_route
+      changed_when: false
+
+    - name: The machine is on the address the site declared
+      ansible.builtin.assert:
+        that:
+          - workstation_boot_cidr in workstation_boot_link.stdout
+          - "'via ' ~ workstation_boot_gateway in workstation_boot_route.stdout"
+          - "'dynamic' not in workstation_boot_link.stdout"
+        fail_msg: >-
+          {{ inventory_hostname }} did not come back on
+          {{ workstation_boot_cidr }} via {{ workstation_boot_gateway }}:
+          `{{ workstation_boot_link.stdout | trim }}`, default route
+          `{{ workstation_boot_route.stdout | trim }}`. Read the console and
+          `journalctl -u NetworkManager` on the machine.
+        success_msg: >-
+          {{ workstation_boot_device }} carries {{ workstation_boot_cidr }} and
+          the default route is {{ workstation_boot_gateway }}.

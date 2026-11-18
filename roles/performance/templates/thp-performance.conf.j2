@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Transparent huge pages have no sysctl on the current Debian release. `madvise` lets a program ask
+# for them instead of the kernel forcing them everywhere (`always`), which is
+# Debian's default and the audit's "nobody decided". A tmpfiles drop-in applies
+# it now and at every boot; remove the file and reboot to reverse it.
+w /sys/kernel/mm/transparent_hugepage/enabled - - - - {{ performance_thp }}

@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Wi-Fi radio's power saving, declared for every profile that does not
+# override it.
+#
+# Measured on the desktop site (2026-11-11), 40 pings each, same access point
+# and signal: `power_save on` answered 56.99 ms mean with 29.50 ms deviation,
+# `power_save off` answered 2.35 ms mean with 0.50 ms deviation. The radio
+# sleeps between beacons; a desktop waiting on a keystroke or a game packet pays
+# that wake-up on every exchange. Debian's default leaves it enabled.
+#
+# `wifi.powersave` values: 0 = use the default, 1 = do not touch the driver,
+# 2 = disable, 3 = enable. A profile that names its own value keeps it; this
+# drop-in is the default the others follow.
+[connection]
+wifi.powersave={{ network_wifi_powersave }}

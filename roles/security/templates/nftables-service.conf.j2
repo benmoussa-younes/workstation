@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The distribution's nftables.service runs one `nft -f /etc/nftables.conf`.
+# This drop-in clears that list and runs the site's file first, then the
+# product's table. `/etc/nftables.conf` is a package conffile and is never
+# written by this product; the site keeps whatever it declares there.
+#
+# Both files are `nft -f` scripts. The product's file deletes and recreates only
+# its own table, so a site table is preserved.
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/nft -f /etc/nftables.conf
+ExecStart=/usr/sbin/nft -f {{ security_nftables_file }}

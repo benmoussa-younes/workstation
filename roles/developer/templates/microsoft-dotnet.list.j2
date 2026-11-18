@@ -1,0 +1,4 @@
+# Managed by Ansible: Microsoft's official Debian repository, used only for
+# the .NET SDK this role declares. The key is pinned by checksum and fingerprint
+# in roles/developer/defaults/main.yml.
+deb [arch=amd64 signed-by={{ developer_dotnet_key_path }}] {{ developer_dotnet_repo_url }} {{ developer_dotnet_repo_suite }} {{ developer_dotnet_repo_component }}

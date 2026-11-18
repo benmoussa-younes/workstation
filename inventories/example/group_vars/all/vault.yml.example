@@ -1,0 +1,17 @@
+---
+# The shape of a workstation vault, for reference only. Never encrypt this
+# file, never use it by a run: the real file is `vault.yml` beside it,
+# encrypted with `ansible-vault` and committed as ciphertext.
+#
+# Create it with:
+#   cp group_vars/all/vault.yml.example group_vars/all/vault.yml
+#   # replace every CHANGEME value
+#   ansible-vault encrypt group_vars/all/vault.yml
+#
+# Run with `--ask-vault-pass` (or a password file outside this tree).
+#
+# The Wi-Fi passphrase is read by the `network` role through
+# `network_wifi_psk` in `group_vars/all/vars.yml`. A wired site can leave the
+# vault out; the mapping defaults to the empty string.
+
+vault_network_wifi_psk: "CHANGEME"

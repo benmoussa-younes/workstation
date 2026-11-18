@@ -1,0 +1,8 @@
+---
+# GRUB reads its image from the configured file and embeds nothing: the menu is
+# regenerated so `/boot/grub/grub.cfg` carries the `background_image` line.
+- name: Update grub
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: /usr/sbin/update-grub
+  changed_when: true
+  when: not ansible_check_mode

@@ -1,0 +1,33 @@
+---
+argument_specs:
+  main:
+    short_description: The declared font families, installed and proved with fontconfig.
+    description:
+      - >-
+        Installs the declared font packages from Debian, rebuilds the font cache
+        when the package set changes, and asserts that every declared family
+        resolves to itself through `fc-match`. fontconfig substitutes a missing
+        family silently, so the resolved family name is what is read back.
+    author: Younes BENMOUSSA
+    options:
+      fonts_packages:
+        type: list
+        elements: str
+        required: false
+        description: The font packages to install; the full list is in `defaults/main.yml`.
+      fonts_expected:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The family names fontconfig must resolve to themselves. A name here
+          that no installed package provides is a defect, and the role fails on
+          it.
+      fonts_cache_command:
+        type: str
+        required: false
+        description: The fontconfig cache builder, by path.
+      fonts_match_command:
+        type: str
+        required: false
+        description: The fontconfig resolver the proof uses, by path.

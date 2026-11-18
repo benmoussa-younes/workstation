@@ -1,0 +1,29 @@
+---
+- name: Restart the rootless Podman socket
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    argv:
+      - systemctl
+      - --user
+      - restart
+      - podman.socket
+  become: true
+  become_user: "{{ virtualization_podman_user }}"
+  environment:
+    HOME: "{{ virtualization_podman_home }}"
+    USER: "{{ virtualization_podman_user }}"
+    LOGNAME: "{{ virtualization_podman_user }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ virtualization_podman_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ virtualization_podman_uid }}/bus"
+  when:
+    - not ansible_check_mode
+    - virtualization_enabled | bool
+    - virtualization_podman_enabled | bool
+    - virtualization_podman_socket_enabled | bool
+  changed_when: true
+
+# The userns drop-in is one file among the sysctl ones; `--system` is what makes
+# the kernel read it after 60-hardening.conf set the opposite value.
+- name: Reload sysctl
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: /usr/sbin/sysctl --system
+  changed_when: false

@@ -1,0 +1,215 @@
+---
+# The profile-wide GNOME policy, written as dconf data and read back from the
+# compiled database.
+#
+# Two halves that only work together: the keyfiles in `/etc/dconf/db/local.d`
+# declare the defaults, and `/etc/dconf/profile/user` is what makes a session read
+# them (`system-db:local`). A keyfile without the profile is inert, and a profile
+# without `dconf update` is never compiled -- both are written here.
+
+- name: The dconf tooling is installed
+  ansible.builtin.apt:
+    name: "{{ dconf_package }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The dconf directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ dconf_profile_dir }}"
+    - "{{ dconf_db_dir }}"
+    - "{{ dconf_locks_dir }}"
+
+# Without this file the session only reads the account's own database: the
+# system-wide defaults and every lock would be ignored, silently.
+- name: The dconf profile is declared
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible; do not edit.
+      # The dconf profile a GNOME session reads. `user-db` is the account's own
+      # database; `system-db` is this product's policy and its locks. Without the
+      # second line the locks are never read and every default is a suggestion.
+      user-db:user
+      system-db:local
+    dest: "{{ dconf_profile_dir }}/{{ dconf_profile_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update the dconf database
+
+- name: The declared policy is written
+  ansible.builtin.template:
+    src: "{{ item.source }}"
+    dest: "{{ dconf_db_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ dconf_keyfiles }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Update the dconf database
+
+- name: The declared locks are written
+  ansible.builtin.template:
+    src: locks.j2
+    dest: "{{ dconf_locks_dir }}/{{ item.key }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ dconf_locks | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  notify: Update the dconf database
+
+# Every file in `local.d` is compiled into the database, whatever its name, and
+# they are read in name order: a keyfile a previous layout wrote (the reference workstation's
+# `00-workstation`) sorts AFTER `00-workstation` and would decide the keys this role
+# believes it owns -- while the read-back below reported a value nobody declared.
+# The role therefore refuses to converge over a policy it does not own, and names
+# the files. Removing them is the operator's call: a left-over file may hold a
+# site's value, which this product will not silently discard.
+- name: The keyfiles already in the database are listed
+  ansible.builtin.find:
+    paths: "{{ dconf_db_dir }}"
+    file_type: file
+    recurse: false
+  register: dconf_existing_keyfiles
+
+- name: The dconf database holds only the declared policy
+  ansible.builtin.assert:
+    that:
+      - >-
+        dconf_existing_keyfiles.files | map(attribute='path') | map('basename')
+        | difference(dconf_keyfiles | map(attribute='dest') | list) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: a keyfile this product does not declare is in
+      {{ dconf_db_dir }}:
+      {{ dconf_existing_keyfiles.files | map(attribute='path') | map('basename')
+         | difference(dconf_keyfiles | map(attribute='dest') | list) }}.
+      dconf compiles EVERY file in that directory, in name order, so a leftover
+      decides keys this role believes it owns. Move it out of the directory
+      (it is still read by `dconf update` until you do), then converge again.
+
+# The key names a path the `branding` role installs. A session pointed at a
+# missing file shows a plain colour, which looks like a theme, not like a fault.
+- name: The declared wallpaper is installed
+  ansible.builtin.stat:
+    path: "{{ dconf_wallpaper }}"
+  register: dconf_wallpaper_file
+
+- name: The declared wallpaper exists
+  ansible.builtin.assert:
+    that:
+      - dconf_wallpaper_file.stat.exists
+      - dconf_wallpaper_file.stat.size | default(0) > 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no {{ dconf_wallpaper }}. The file is installed
+      by the `branding` role, which runs before this one; converge it, or declare
+      a wallpaper that exists.
+  # In check mode the `branding` copy is only SIMULATED, so the file is absent on
+  # a first dry run; the assertion is about the real machine.
+  when: not ansible_check_mode
+
+# The dash names a desktop id per entry. There is no error for a missing one: the
+# entry is simply not drawn, and the shell logs nothing a user reads.
+- name: The declared favorites' desktop entries are read
+  ansible.builtin.stat:
+    path: "{{ dconf_desktop_dir }}/{{ item }}"
+  loop: "{{ dconf_favorite_apps }}"
+  loop_control:
+    label: "{{ item }}"
+  register: dconf_favorite_entries
+  when: not ansible_check_mode
+
+- name: Every declared favorite resolves to a desktop entry
+  ansible.builtin.assert:
+    that:
+      - dconf_favorite_entries.results | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no desktop entry for
+      {{ dconf_favorite_entries.results | rejectattr('stat.exists')
+         | map(attribute='item') | list }}. The `applications` role installs the
+      packages that provide them and runs before this one; converge it first.
+  when: not ansible_check_mode
+
+# The read-back has to happen after the handler, not at the end of the play: it
+# reads the COMPILED database, which only exists once `dconf update` ran.
+- name: The dconf database is compiled before it is read
+  ansible.builtin.meta: flush_handlers
+
+# `dconf update` leaves the compiled database 0640 root:root. A GNOME session
+# runs as the account and then cannot open it: every default silently falls back
+# to the distribution's (measured on the proof host, 2026-10-26). The database is
+# the product's policy; it is readable.
+- name: The compiled dconf database is readable by every session
+  ansible.builtin.file:
+    path: "{{ dconf_database }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not ansible_check_mode
+
+- name: The declared values are read from the profile the session uses
+  ansible.builtin.command:
+    cmd: dconf read {{ item.key }}
+  environment:
+    DCONF_PROFILE: "{{ dconf_profile_file }}"
+  loop: "{{ dconf_readback }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: dconf_readback_result
+  changed_when: false
+  when: not ansible_check_mode
+
+# `dconf read` prints the value as GVariant text, and a key with no value in the
+# database prints nothing at all -- which is why an empty answer fails here rather
+# than passing as "equal to an empty list".
+- name: The declared values are in force
+  ansible.builtin.assert:
+    that:
+      - item.stdout | length > 0
+      - item.item.contains | reject('in', item.stdout) | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: `dconf read {{ item.item.key }}` answers
+      '{{ item.stdout | trim }}', which does not carry
+      {{ item.item.contains | reject('in', item.stdout) | list }}. The profile is
+      `{{ dconf_profile_dir }}/{{ dconf_profile_file }}`; without `system-db:local`
+      the system database is never read.
+  loop: "{{ dconf_readback_result.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: not ansible_check_mode
+
+# The pinned set is read from the database, not from the variable that produced
+# it: what matters is that the applications the product does not ship are gone
+# from the policy the session will read. One assertion, so an empty answer (a
+# missing key) cannot pass as "none of them is pinned".
+- name: The pinned applications are read from the database
+  ansible.builtin.command:
+    cmd: dconf read /org/gnome/shell/favorite-apps
+  environment:
+    DCONF_PROFILE: "{{ dconf_profile_file }}"
+  register: dconf_favorite_apps_read
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: No application the product does not ship is pinned
+  ansible.builtin.assert:
+    that:
+      - dconf_favorite_apps_read.rc == 0
+      - dconf_favorite_apps_read.stdout | length > 0
+      - >-
+        dconf_favorite_apps_absent
+        | select('in', dconf_favorite_apps_read.stdout) | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} still pins
+      {{ dconf_favorite_apps_absent
+         | select('in', dconf_favorite_apps_read.stdout) | list }}, which this
+      product does not install. Read `{{ dconf_db_dir }}`: a keyfile that declares
+      `favorite-apps` is overriding the declared set.
+  when: not ansible_check_mode

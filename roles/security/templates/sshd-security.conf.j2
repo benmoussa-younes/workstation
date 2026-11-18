@@ -1,0 +1,51 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A drop-in, not a rewrite: Debian's /etc/ssh/sshd_config includes
+# /etc/ssh/sshd_config.d/*.conf at the top, so these win without this role
+# owning a file the distribution also owns. Everything not named here keeps
+# its Debian default, including `UsePAM yes` — which is what makes the locked
+# accounts and the sudo policy below actually apply.
+
+# The listening port. The role refuses a change from the SSH session it would
+# cut (see the task that validates `security_ssh_port`); the firewall opens the
+# same value in the same run.
+Port {{ security_ssh_port }}
+
+# This product's SSH path is key-only. An account may still carry a password for
+# the CONSOLE — a converted host deliberately declares one — and this directive is what
+# keeps that a local convenience instead of a network one.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+
+# Nobody logs in as root — not even with a key. Escalation is sudo, which is
+# auditable and reversible.
+PermitRootLogin no
+
+# No forwarding surface a server does not need: X11, and the three tunnel
+# flavours. Agent forwarding is the real exposure -- a compromised server could
+# otherwise use the operator's agent to reach other hosts.
+X11Forwarding no
+AllowTcpForwarding no
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+
+# Slow guessing down and serve the banner the identity role writes.
+MaxAuthTries 3
+LoginGraceTime 60
+Banner /etc/issue.net
+{% if security_sshd_allow_groups_effective %}
+# Only declared groups may log in. An empty list would mean anyone with a key.
+# The machine account's group is added when `accounts_machine_mode: machine`.
+AllowGroups {{ security_sshd_allow_groups_effective | join(' ') }}
+{% endif %}
+
+# What Lynis counts as hardening, and what a server means by it: a session that
+# is never left half-open, two channels per connection at most, and no rc file
+# executed on login. Each is a default Debian leaves open.
+ClientAliveInterval {{ security_sshd_client_alive_interval }}
+ClientAliveCountMax {{ security_sshd_client_alive_count_max }}
+MaxSessions {{ security_sshd_max_sessions }}
+PermitUserRC no
+TCPKeepAlive no
+LogLevel VERBOSE

@@ -1,0 +1,42 @@
+# Managed by Ansible; do not edit.
+#
+# GNOME's appearance and behaviour, system-wide: the session and the greeter read
+# the same defaults. The wallpaper and the clock/button layout are locked by
+# `02-workstation-appearance`; the theme, the color scheme and the accent are the
+# user's choice and are not locked. A light scheme is a preference, not a defect.
+#
+# `cursor-size` is an int32 and stays bare; a `uint32` key says so, or GSettings
+# rejects the value and uses its own default without saying anything.
+[org/gnome/desktop/interface]
+font-name='{{ dconf_font_name }}'
+document-font-name='{{ dconf_document_font_name }}'
+monospace-font-name='{{ dconf_monospace_font_name }}'
+gtk-theme='{{ dconf_gtk_theme }}'
+icon-theme='{{ dconf_icon_theme }}'
+cursor-theme='{{ dconf_cursor_theme }}'
+cursor-size={{ dconf_cursor_size }}
+color-scheme='{{ dconf_color_scheme }}'
+accent-color='{{ dconf_accent_color }}'
+clock-format='{{ dconf_clock_format }}'
+clock-show-date={{ dconf_clock_show_date | bool | lower }}
+clock-show-weekday={{ dconf_clock_show_weekday | bool | lower }}
+
+[org/gnome/desktop/wm/preferences]
+button-layout='{{ dconf_button_layout }}'
+
+[org/gnome/desktop/background]
+picture-uri='{{ dconf_wallpaper_uri }}'
+picture-uri-dark='{{ dconf_wallpaper_uri }}'
+picture-options='{{ dconf_wallpaper_options }}'
+color-shading-type='{{ dconf_background_shading }}'
+primary-color='{{ dconf_background_color }}'
+secondary-color='{{ dconf_background_color }}'
+
+# The dash. `03-workstation-extensions` declares the extension keys of the SAME
+# section; dconf merges several keyfiles per database, so the split is for the
+# reader, not for dconf.
+#
+# The list is rendered in dconf's own single-quoted form (`['a', 'b']`). The value
+# is GVariant text, and a string list is what the `favorite-apps` schema takes.
+[org/gnome/shell]
+favorite-apps=[{{ dconf_favorite_apps | map('regex_replace', '^(.+)$', "'\\1'") | join(', ') }}]

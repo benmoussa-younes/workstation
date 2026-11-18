@@ -1,0 +1,11 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Apply a security fix that is installed but not yet in use: restart the services
+# that loaded an upgraded library.
+#
+# The KERNEL reboot is NOT needrestart's business -- the product signals it with
+# `workstation-reboot-check` and the operator decides. Kernel hints
+# are off, so one component owns that message.
+$nrconf{restart} = 'a';
+$nrconf{kernelhints} = 0;

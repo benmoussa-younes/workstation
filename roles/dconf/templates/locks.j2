@@ -1,0 +1,11 @@
+# Managed by Ansible; do not edit.
+#
+# dconf locks: every path below is read-only for every account -- an application
+# or a user that writes it is refused, and the declared value stays. A key that is
+# not listed here is the user's to change.
+#
+# Compiled with `dconf update` (the `dconf` role's handler); until then a session
+# reads the previous database.
+{% for key in item.value %}
+{{ key }}
+{% endfor %}

@@ -1,0 +1,12 @@
+---
+- name: Apply the console keymap
+  ansible.builtin.command:
+    cmd: setupcon --force
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Rebuild the bootloader configuration
+  ansible.builtin.command:
+    cmd: update-grub
+  changed_when: true
+  when: not ansible_check_mode

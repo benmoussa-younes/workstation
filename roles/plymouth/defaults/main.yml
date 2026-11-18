@@ -1,0 +1,40 @@
+---
+# The boot splash.
+#
+# The Server collection ships a Plymouth theme as an inert asset and says plainly that
+# no role configures it: a server boots to a scrolling log. A workstation boots
+# to a desktop, and the screen between GRUB and GDM belongs to the product.
+#
+# This role installs the theme from this product's own `assets/` (never from the
+# server's directory), selects it with `plymouth-set-default-theme`, rebuilds the
+# initramfs and reads the selection back.
+
+# The theme compiled into the initramfs and started by `plymouthd`.
+plymouth_theme_name: workstation
+plymouth_theme_source: "{{ role_path }}/../../assets/branding/theme/workstation"
+plymouth_theme_dir: /usr/share/plymouth/themes/workstation
+
+# The package that CONFIGURES the splash. `plymouth-set-default-theme` lives
+# here; without it the theme files are inert. `common` declares it too, so this
+# is the guard that fails loudly if a site removed it, not a second install path.
+plymouth_package: plymouth
+
+# The distribution's theme collection. The product's own theme needs none of
+# them; they are installed because `plymouth-set-default-theme` lists the themes
+# a site may choose, and a site choosing one should find it ready.
+plymouth_install_themes: true
+plymouth_themes_package: plymouth-themes
+
+# The tool that reads the selected theme and rebuilds the initramfs.
+plymouth_default_theme_tool: /usr/sbin/plymouth-set-default-theme
+plymouth_update_initramfs: /usr/sbin/update-initramfs
+
+# Where the selection is stored; read back at the end of the run.
+plymouth_selection_file: /etc/plymouth/plymouthd.conf
+
+# The kernel command line must carry `splash`, or `plymouthd` never shows the
+# theme. `hardening_kernel_cmdline` declares it on this product; this role
+# refuses a host where the installed line lost it, instead of editing GRUB a
+# second time (`hardening` owns `/etc/default/grub`).
+plymouth_required_cmdline_option: splash
+plymouth_grub_default: /etc/default/grub

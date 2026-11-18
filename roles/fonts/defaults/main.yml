@@ -1,0 +1,39 @@
+---
+# The declared font families.
+#
+# Every package here is in the the current Debian release archive: no font is fetched from a vendor,
+# and none is copied by hand. The list is what the desktop *renders* with --
+# `dconf` names the families, and this role proves they resolve. A family the
+# `dconf` role selected and this role does not install is a fontconfig fallback,
+# which looks like the wrong font rather than a missing one.
+fonts_packages:
+  - fonts-inter         # the interface and document font
+  - fonts-firacode      # the monospace font (terminal, code)
+  - fonts-cantarell     # GNOME's own fallback; the shell's default before Inter
+  - fonts-dejavu-core   # the last-resort fallback: a missing font lands here
+  - fonts-liberation    # metric-compatible with Arial/Times: documents that
+                        # assume them render at the right width
+  - fonts-noto-color-emoji
+  - fonts-noto-core     # coverage for the scripts the other three do not have;
+                        # a document with Greek or Cyrillic needs it
+  - fonts-noto-extra    # Arabic, Thai, Hebrew, Devanagari and the other
+                        # script families; 334 MB, kept deliberately
+  - fonts-noto-cjk      # Chinese, Japanese and Korean; 91 MB, the CJK gap
+
+# The families `fc-match` must resolve to THEMSELVES. A misspelt or absent family
+# does not fail: fontconfig answers with the closest one, so the name of the
+# family in the selector is what has to be checked, not that `fc-match` exits 0.
+fonts_expected:
+  - Inter
+  - Fira Code
+  - Cantarell
+  - DejaVu Sans
+  - Liberation Sans
+  - Noto Color Emoji
+  - Noto Sans Arabic
+  - Noto Sans CJK SC
+
+# The fontconfig tools, by path: they are where Debian puts them, and naming the
+# path keeps the tasks readable.
+fonts_cache_command: /usr/bin/fc-cache
+fonts_match_command: /usr/bin/fc-match

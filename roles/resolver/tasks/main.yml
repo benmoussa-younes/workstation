@@ -1,0 +1,205 @@
+---
+# The ORDER of this role is the safety property, not a style choice.
+#
+# Installing `systemd-resolved` makes it the resolver of the whole host at once:
+# Debian's `nsswitch.conf` reads `hosts: files myhostname resolve
+# [!UNAVAIL=return] dns`, so every lookup goes to the stub from the moment the
+# package is configured, and never falls through to `dns`. A package installed
+# before its declaration starts a resolver with NO upstream -- the link is not
+# managed by networkd under `network_apply: verify`, so it has no link DNS --
+# and the host loses name resolution until someone notices (measured on
+# the proof host, 2026-10-21).
+#
+# The declaration is therefore written FIRST, into a directory this role owns,
+# and the package is installed after it. The package's own start then reads the
+# configuration, and the host never has a resolver without an upstream.
+
+- name: The DoT and DNSSEC combination is reported
+  # `resolved.conf(5)` requires `DNSSEC=yes` beside `DNSOverTLS=yes`: encrypted
+  # transport that is not validated hides a downgrade. That is the strong form,
+  # and it is fragile in practice -- one badly signed name becomes unreachable.
+  #
+  # `allow-downgrade` is therefore accepted, not refused: the transport is
+  # encrypted either way, and the upstream (a filtering resolver) validates. The
+  # role says what the combination means instead of failing a deliberate choice.
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: DNS over TLS is on with
+      `resolver_dnssec: {{ resolver_dnssec }}`. The transport is encrypted; the
+      validation is the upstream's, not this host's. Set `resolver_dnssec: yes`
+      to validate locally as well.
+  when:
+    - resolver_dns_over_tls | bool
+    - resolver_dnssec != 'yes'
+
+- name: The resolver settings are known values
+  ansible.builtin.assert:
+    that:
+      - resolver_dnssec in ['yes', 'no', 'allow-downgrade']
+    fail_msg: >-
+      {{ inventory_hostname }}: `resolver_dnssec` must be `yes`, `no` or
+      `allow-downgrade` (got `{{ resolver_dnssec }}`).
+
+- name: The resolver has an upstream to ask
+  # The stub is the host's ONLY resolver once the package is installed
+  # (`nsswitch.conf`: `hosts: ... resolve [!UNAVAIL=return] dns`). When the
+  # `network` role writes the next-boot keyfile (`boot`/`boot_pending`), that
+  # keyfile is `method=manual` for Wi-Fi and may learn no resolver from DHCP:
+  # one of `network_boot_dns` or `resolver_fallback_dns` must be declared. In
+  # `live`/`verify`, NetworkManager owns the link and hands its DHCP resolver to
+  # this stub, so the requirement does not apply. The final `resolvectl dns`
+  # read-back below is the check that cannot be satisfied by an empty list.
+  ansible.builtin.assert:
+    that:
+      - >-
+        (network_boot_dns | default([]) | length > 0)
+        or (resolver_fallback_dns | length > 0)
+    fail_msg: >-
+      {{ inventory_hostname }} would install a resolver with no upstream: the
+      boot keyfile is manual and declares no `dns=`, and
+      `resolver_fallback_dns` is empty. Declare `network_boot_dns` or
+      `resolver_fallback_dns`.
+  when: (network_effective_apply | default('verify')) in ['boot', 'boot_pending']
+
+- name: The resolver drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ resolver_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The resolver is declared
+  ansible.builtin.template:
+    src: 10-workstation.conf.j2
+    dest: "{{ resolver_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: resolver_declaration
+
+# AFTER the declaration, never before: installing the package activates it for
+# every lookup (`nsswitch.conf`), and a resolver started without an upstream
+# takes the host's name resolution away. Installed here, the package's own
+# start reads the file written above.
+- name: The resolver package is present
+  ansible.builtin.apt:
+    name: systemd-resolved
+    state: present
+    cache_valid_time: 3600
+
+# The package is installed by the task above, so the unit exists on a real run —
+# but not in check mode, where the install is only reported. The start is
+# therefore not simulated there.
+- name: The resolver is enabled and running
+  ansible.builtin.systemd_service:
+    name: systemd-resolved.service
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: The resolver is restarted when its declaration changed
+  ansible.builtin.systemd_service:
+    name: systemd-resolved.service
+    state: restarted
+  when:
+    - resolver_declaration.changed
+    - not ansible_check_mode
+
+# The stub binds 127.0.0.53:53; the firewall accepts loopback, and any DNS
+# service a site adds binds its own address, so the two never collide.
+- name: The installer's resolv.conf is preserved once
+  ansible.builtin.copy:
+    src: "{{ resolver_resolv_conf }}"
+    dest: "{{ resolver_resolv_conf_backup }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  when: resolver_manage_resolv_conf
+
+- name: The stub owns resolv.conf
+  ansible.builtin.file:
+    src: "{{ resolver_stub_resolv_conf }}"
+    dest: "{{ resolver_resolv_conf }}"
+    state: link
+    force: true
+  when: resolver_manage_resolv_conf
+
+# The symlink points into /run, which belongs to the running service: a stub
+# that did not start leaves /etc/resolv.conf dangling and every lookup fails
+# with a file that still looks correct.
+- name: The resolver's stub file is present
+  ansible.builtin.stat:
+    path: "{{ resolver_stub_resolv_conf }}"
+  register: resolver_stub
+  when:
+    - resolver_manage_resolv_conf
+    - not ansible_check_mode
+
+- name: The host resolves through a running stub
+  ansible.builtin.assert:
+    that:
+      - resolver_stub.stat.exists | default(false)
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ resolver_stub_resolv_conf }} does not exist,
+      so {{ resolver_resolv_conf }} points at nothing and no name resolves.
+      Read `systemctl status systemd-resolved`.
+  when:
+    - resolver_manage_resolv_conf
+    - not ansible_check_mode
+
+# The result, not the mechanism: the size of the outage this role can cause is
+# the size of its upstream list, because the stub is the host's only resolver.
+- name: The upstreams the resolver will ask are read
+  ansible.builtin.command:
+    cmd: resolvectl dns
+  register: resolver_upstreams
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The resolver has servers to ask
+  ansible.builtin.assert:
+    that:
+      - resolver_upstreams.stdout | trim | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: systemd-resolved is the host's only resolver and
+      has NO upstream. Read `resolvectl dns`; declare `network_boot_dns` or
+      `resolver_fallback_dns`, then run the role again.
+  when: not ansible_check_mode
+
+# The directory this role declares in is owned. Measured on a converted machine
+# (2026-10-20): a drop-in left by that machine's previous configuration sorted
+# after `10-workstation.conf` and won BOTH keys -- `DNSSEC=no` and `Domains=~.` --
+# while the role reported success and `resolvectl` showed the other policy.
+- name: The resolver drop-ins already present are listed
+  ansible.builtin.find:
+    paths: "{{ resolver_conf_dir }}"
+    patterns: "*.conf"
+    file_type: file
+  register: resolver_existing
+
+- name: The resolver drop-ins are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ resolver_existing.files | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('equalto', resolver_dropin)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: resolver_owner
+  changed_when: false
+  failed_when: false
+
+- name: The resolver drop-ins no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: "{{ resolver_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+  notify: Restart systemd-resolved

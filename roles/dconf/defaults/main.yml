@@ -1,0 +1,280 @@
+---
+# The profile-wide GNOME policy, as data.
+#
+# dconf is where a GNOME session keeps its settings. `/etc/dconf/db/local.d` is
+# the SYSTEM half of it: the values declared here are the defaults every account
+# starts from, and the files in `locks/` make the declared keys non-overridable.
+# A user's own database still wins on every key that is NOT locked -- which is why
+# appearance, the screen lock and privacy are locked and the pinned applications
+# are not (a user may pin another application; the product only declares the
+# initial set).
+#
+# The values are the reference workstation's, the workstation this product was proved on, with two
+# deliberate changes: the wallpaper points at THIS product's file (installed by
+# `branding`) instead of the reference workstation's per-machine directory, and the font names are the
+# ones the `fonts` role installs. GDM's logo is NOT here: it is a greeter key, in
+# `/etc/gdm3/greeter.dconf-defaults`, and the `display` role owns it.
+#
+# Typed values matter. A `uint32` key written as a bare integer is rejected by
+# GSettings, which then silently uses its own default -- so `idle-delay`,
+# `lock-delay` and `old-files-age` are rendered with their `uint32` marker and
+# the int32 keys stay bare. The schema types were read on the reference workstation (GNOME 48).
+
+dconf_package: dconf-cli
+
+dconf_profile_dir: /etc/dconf/profile
+dconf_profile_file: user
+dconf_db_dir: /etc/dconf/db/local.d
+dconf_locks_dir: /etc/dconf/db/local.d/locks
+# The compiled database. `dconf update` writes it 0640 root:root; a session runs
+# as the account, not in group root, and cannot read it (measured on the proof
+# host, 2026-10-26). It must be world-readable, like Debian's other dconf dbs.
+dconf_database: /etc/dconf/db/local
+
+# --- appearance -------------------------------------------------------------
+
+dconf_wallpaper: /usr/share/backgrounds/workstation-wallpaper.png
+dconf_wallpaper_uri: "file://{{ dconf_wallpaper }}"
+dconf_wallpaper_options: zoom
+dconf_background_shading: solid
+# The old pure black was harsh on the eyes; this is a soft near-black. The
+# wallpaper is the dominant surface; the colour is what shows behind it.
+dconf_background_color: "#15171a"
+
+dconf_color_scheme: prefer-dark
+dconf_accent_color: green
+dconf_gtk_theme: Adwaita
+dconf_icon_theme: Adwaita
+dconf_cursor_theme: Adwaita
+dconf_cursor_size: 24
+dconf_button_layout: ":minimize,maximize,close"
+
+dconf_font_name: "Inter 11"
+dconf_document_font_name: "Inter 11"
+dconf_monospace_font_name: "Fira Code 11"
+
+dconf_clock_format: 24h
+dconf_clock_show_date: true
+dconf_clock_show_weekday: true
+
+# --- screen lock, idle and power --------------------------------------------
+#
+# The display blanks and locks after `dconf_idle_delay` seconds; the session never
+# suspends or hibernates, on AC or on battery. A workstation that suspends drops
+# the network and every SSH session with it.
+
+dconf_lock_enabled: true
+dconf_lock_delay: 0
+dconf_idle_delay: 300
+dconf_sleep_ac: nothing
+dconf_sleep_battery: nothing
+dconf_sleep_ac_timeout: 0
+dconf_sleep_battery_timeout: 0
+
+# --- privacy ----------------------------------------------------------------
+#
+# No history, no telemetry, cleanup on, USB protected while locked, and no
+# external search provider (a search box that queries the network is a request
+# from the desktop stack this product forbids).
+
+dconf_privacy_remember_recent_files: false
+dconf_privacy_remember_app_usage: false
+dconf_privacy_send_software_usage_stats: false
+dconf_privacy_report_technical_problems: false
+dconf_privacy_remove_old_temp_files: true
+dconf_privacy_remove_old_trash_files: true
+dconf_privacy_old_files_age: 7
+dconf_privacy_show_full_name_in_top_bar: false
+dconf_privacy_usb_protection: true
+dconf_privacy_usb_protection_level: lockscreen
+dconf_privacy_disable_external_search: true
+
+# --- the shell: the dash and the extension set ------------------------------
+
+# The pinned applications, in order. The `applications` role installs them and
+# proves each desktop id resolves; this is the policy that pins them. NOT locked:
+# a user may pin another application, and the product only decides the start set.
+dconf_favorite_apps:
+  - firefox.desktop
+  - org.gnome.Evolution.desktop
+  - org.gnome.Nautilus.desktop
+  - org.gnome.TextEditor.desktop
+  - org.gnome.Ptyxis.desktop
+
+# Applications the reference workstation pinned and this product's start set
+# does not pin. VSCodium is installed now, under
+# `com.visualstudio.CodeOSS.desktop`, but it is not a product favorite; a user
+# may pin it. virt-manager is not installed, so a dash that starts with it is a
+# lie. GIMP is a product default and is no longer in this list.
+dconf_favorite_apps_absent:
+  - virt-manager.desktop
+
+# The curated extension set. Installation of anything else is refused, and the
+# four are locked so a session cannot add a fifth.
+dconf_extensions:
+  - ubuntu-appindicators@ubuntu.com
+  - caffeine@patapon.info
+  - tiling-assistant@leleat-on-github
+  - ding@rastersoft.com
+dconf_allow_extension_installation: false
+
+# The keyfiles this role writes, in the order dconf compiles them. The name is
+# what decides the merge (a file this role does not declare is refused below), so
+# they are data here and not spelled inline in the tasks.
+dconf_keyfiles:
+  - source: 00-workstation.j2
+    dest: 00-workstation
+  - source: 01-workstation-lock.j2
+    dest: 01-workstation-lock
+  - source: 02-workstation-privacy.j2
+    dest: 02-workstation-privacy
+  - source: 03-workstation-extensions.j2
+    dest: 03-workstation-extensions
+  - source: 04-workstation-app-folders.j2
+    dest: 04-workstation-app-folders
+
+# The locks, by file: each path becomes read-only for the user. The lists are what
+# the reference workstation locks, adapted to this product's names -- the appearance keys, the screen
+# lock and idle policy, the privacy policy and the extension set.
+#
+# `favorite-apps` and the font names are deliberately NOT locked: the product
+# declares their start value and lets the account change them. Every key that IS
+# locked has a declared value in the keyfiles above; a lock on a key this role
+# does not declare would freeze a value nobody decided.
+dconf_locks:
+  01-workstation-lock:
+    - /org/gnome/desktop/screensaver/lock-enabled
+    - /org/gnome/desktop/screensaver/lock-delay
+    - /org/gnome/desktop/session/idle-delay
+    - /org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type
+    - /org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type
+    - /org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-timeout
+    - /org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-timeout
+  02-workstation-appearance:
+    # The theme and the accent are the user's: a light scheme and an accent
+    # other than the brand green are a preference, not a policy. The wallpaper
+    # and the clock/button layout stay the product's.
+    - /org/gnome/desktop/interface/clock-format
+    - /org/gnome/desktop/interface/clock-show-date
+    - /org/gnome/desktop/interface/clock-show-weekday
+    - /org/gnome/desktop/wm/preferences/button-layout
+    - /org/gnome/desktop/background/picture-uri
+    - /org/gnome/desktop/background/picture-uri-dark
+    - /org/gnome/desktop/background/picture-options
+    - /org/gnome/desktop/background/color-shading-type
+    - /org/gnome/desktop/background/primary-color
+    - /org/gnome/desktop/background/secondary-color
+  03-workstation-privacy:
+    - /org/gnome/desktop/privacy/remember-recent-files
+    - /org/gnome/desktop/privacy/remember-app-usage
+    - /org/gnome/desktop/privacy/send-software-usage-stats
+    - /org/gnome/desktop/privacy/report-technical-problems
+    - /org/gnome/desktop/privacy/remove-old-temp-files
+    - /org/gnome/desktop/privacy/remove-old-trash-files
+    - /org/gnome/desktop/privacy/old-files-age
+    - /org/gnome/desktop/privacy/show-full-name-in-top-bar
+    - /org/gnome/desktop/privacy/usb-protection
+    - /org/gnome/desktop/privacy/usb-protection-level
+    - /org/gnome/desktop/search-providers/disable-external
+  04-workstation-extensions:
+    - /org/gnome/shell/enabled-extensions
+    - /org/gnome/shell/disable-user-extensions
+    - /org/gnome/shell/allow-extension-installation
+
+# Where Debian's packaged desktop entries live. The dash ids are checked against
+# it: a favorite with no entry is a hole in the dash, and GNOME reports nothing.
+dconf_desktop_dir: /usr/share/applications
+
+# --- the read-back ----------------------------------------------------------
+#
+# What the role proves at the end, from the COMPILED database: `dconf read` under
+# the profile the session uses. `contains` is the fragment that must appear in
+# the GVariant text it prints -- quotes included for a string, and every member
+# for a list (the text form of a string list is `['a', 'b']`).
+dconf_readback:
+  - key: /org/gnome/desktop/interface/color-scheme
+    contains:
+      - "'{{ dconf_color_scheme }}'"
+  - key: /org/gnome/desktop/interface/font-name
+    contains:
+      - "'{{ dconf_font_name }}'"
+  - key: /org/gnome/desktop/background/picture-uri
+    contains:
+      - "'{{ dconf_wallpaper_uri }}'"
+  - key: /org/gnome/desktop/background/picture-uri-dark
+    contains:
+      - "'{{ dconf_wallpaper_uri }}'"
+  - key: /org/gnome/shell/favorite-apps
+    contains: "{{ dconf_favorite_apps }}"
+  - key: /org/gnome/shell/enabled-extensions
+    contains: "{{ dconf_extensions }}"
+
+# The application-grid folders. The product declares the start set; the user may
+# rearrange it. Each folder lists desktop ids the `applications` role installs;
+# a folder with no installed id is ignored by the shell.
+#
+# These keys are the grid's *initial* state. GNOME keeps the arrangement of an
+# account in `org.gnome.shell app-picker-layout`, a per-account key: once a grid
+# has been built, adding a folder here does not add it to that grid. A fresh
+# account gets the six folders; an account whose grid predates the declaration
+# keeps its own until its layout is reset
+# (`dconf reset /org/gnome/shell/app-picker-layout`).
+dconf_app_folders:
+  - id: Utilities
+    name: Utilitaires
+    apps:
+      - org.gnome.Calculator.desktop
+      - org.gnome.Characters.desktop
+      - org.gnome.clocks.desktop
+      - org.gnome.TextEditor.desktop
+      - org.gnome.FileRoller.desktop
+      - org.gnome.baobab.desktop
+      - org.gnome.font-viewer.desktop
+      - simple-scan.desktop
+      - org.gnome.Ptyxis.desktop
+  - id: System
+    name: Système
+    apps:
+      - org.gnome.Settings.desktop
+      - org.gnome.tweaks.desktop
+      - org.gnome.Logs.desktop
+      - org.gnome.SystemMonitor.desktop
+      - org.gnome.DiskUtility.desktop
+      - org.gnome.Software.desktop
+      - org.gnome.Extensions.desktop
+      - org.gnome.Tecla.desktop
+      - org.gnome.World.Secrets.desktop
+  - id: Media
+    name: Médias
+    apps:
+      - vlc.desktop
+      - org.gnome.Showtime.desktop
+      - org.gnome.Music.desktop
+      - org.gnome.Snapshot.desktop
+      - org.gnome.SoundRecorder.desktop
+  - id: Office
+    name: Bureau
+    apps:
+      - libreoffice-writer.desktop
+      - libreoffice-calc.desktop
+      - libreoffice-impress.desktop
+      - libreoffice-draw.desktop
+      - libreoffice-base.desktop
+      - libreoffice-math.desktop
+      - org.gnome.Evolution.desktop
+      - org.gnome.Calendar.desktop
+      - org.gnome.Contacts.desktop
+      - org.gnome.Papers.desktop
+  - id: Graphics
+    name: Graphismes
+    apps:
+      - gimp.desktop
+      - org.inkscape.Inkscape.desktop
+      - org.gnome.Loupe.desktop
+  - id: Internet
+    name: Internet
+    apps:
+      - firefox.desktop
+      - org.gnome.Connections.desktop
+      - org.gnome.Weather.desktop
+      - org.gnome.Maps.desktop

@@ -1,0 +1,61 @@
+---
+# The optional local virtualization stack: libvirt/virt-manager and rootless
+# Podman. The role creates no virtual machine and no container; it installs and
+# configures the tools, the local socket, the default NAT network and the
+# default storage pool.
+virtualization_enabled: false
+
+# The human account that owns the local libvirt connection and the rootless
+# Podman engine. It must already exist.
+virtualization_user: "{{ workstation_user | default('') }}"
+
+virtualization_packages:
+  - qemu-system-x86
+  - libvirt-daemon-system
+  - libvirt-clients
+  - virt-manager
+  - virtinst
+  - ovmf
+  - swtpm
+  - dnsmasq-base
+
+virtualization_libvirt_service: libvirtd
+virtualization_groups:
+  - libvirt
+  - kvm
+
+virtualization_default_network: default
+virtualization_default_network_definition: /usr/share/libvirt/networks/default.xml
+virtualization_storage_pool: default
+virtualization_storage_pool_path: /var/lib/libvirt/images
+
+# Rootless Podman is part of the bundle; set it false to install libvirt only.
+virtualization_podman_enabled: true
+virtualization_podman_user: "{{ virtualization_user }}"
+virtualization_podman_packages:
+  - podman
+  - slirp4netns
+  - fuse-overlayfs
+  - uidmap
+  - passt
+virtualization_podman_registries:
+  - docker.io
+virtualization_podman_registries_dir: /etc/containers/registries.conf.d
+virtualization_podman_registries_file: "{{ virtualization_podman_registries_dir }}/99-podman.conf"
+virtualization_podman_containers_dir: /etc/containers/containers.conf.d
+virtualization_podman_containers_file: "{{ virtualization_podman_containers_dir }}/99-podman.conf"
+virtualization_podman_socket_enabled: true
+
+# Rootless Podman clones an unprivileged user namespace for every container, and
+# `60-hardening.conf` disables them. This drop-in loads after it and re-enables
+# them on a host that declares the engine -- the same exception the gaming role
+# makes for Steam's sandbox, with its own file so the two never fight.
+virtualization_podman_userns_sysctl: /etc/sysctl.d/62-podman-userns.conf
+virtualization_podman_linger: true
+virtualization_podman_subuid_start: 100000
+virtualization_podman_subuid_count: 65536
+virtualization_podman_subuid_end: "{{ virtualization_podman_subuid_start + virtualization_podman_subuid_count - 1 }}"
+virtualization_podman_verify: true
+
+# Read the libvirt state back after configuring it.
+virtualization_verify: true

@@ -1,0 +1,105 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The audit found these values at their Debian defaults: rp_filter 0,
+# accept_redirects 1, log_martians 0, kptr_restrict 0, ptrace_scope 0,
+# kexec_load_disabled 0. Reading them from /proc/sys rather than the `sysctl`
+# command matters — `sysctl` is not on the non-login PATH.
+
+# --- IPv4: spoofed sources, redirects, martians ------------------------------
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.tcp_syncookies = 1
+
+# --- IPv4/IPv6: forwarding ---------------------------------------------------
+# DECLARED, not inherited. The audit's whole point about this file is that a
+# value left at its Debian default is one nobody decided; forwarding was exactly
+# that (the kernel default, 0, and nothing in this product said so). a site node
+# is not a router: the VPN client's traffic is addressed to the node it connects
+# to, and a node that routes nothing cannot be made to route by accident. The
+# forward hook's policy is drop as well (the `security` firewall), so the two
+# agree: declare 1 here only with a declared flow there.
+net.ipv4.ip_forward = 0
+net.ipv6.conf.all.forwarding = 0
+
+# --- IPv6: the same, where it applies ---------------------------------------
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+
+# --- Kernel information and debug surfaces -----------------------------------
+# Hiding the kernel's addresses costs a little diagnosis and buys real
+# resistance to a local attacker learning the layout. `2` hides the pointers even
+# from root via %pK.
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+kernel.perf_event_paranoid = 3
+kernel.unprivileged_bpf_disabled = 2
+
+# Tracing another process is a real capability; restrict it to the process's
+# own children unless a profile is deliberately being debugged.
+kernel.yama.ptrace_scope = 1
+
+# No kexec: replacing the running kernel is not something a base machine needs.
+# It is declared FALSE wherever kdump is in use: kdump IS kexec -- it loads a
+# crash kernel with it -- and disabling the call makes `kdump` fail at its next
+# load, which is only discovered when a crash produces nothing.
+kernel.kexec_load_disabled = {{ 1 if hardening_kexec_load_disabled else 0 }}
+
+# The magic SysRq key. 0 disables it entirely; 176 keeps sync, unmount and
+# reboot — the emergency escape on a host reachable only over the network —
+# while disabling the memory-dumping and key-handling functions.
+kernel.sysrq = {{ hardening_sysrq }}
+
+# Reboot on a BUG, not on a WARN (see defaults: a firmware WARN is not a fault).
+kernel.oops_limit = {{ hardening_oops_limit }}
+kernel.warn_limit = {{ hardening_warn_limit }}
+
+fs.suid_dumpable = 0
+
+# A system-wide ceiling on open file descriptors, declared.
+fs.file-max = 1000000
+
+# --- Declared, not inherited: the values the audit found at Debian defaults ---
+fs.protected_hardlinks = 1
+fs.protected_symlinks = 1
+fs.protected_fifos = 2
+fs.protected_regular = 2
+kernel.randomize_va_space = 2
+# Harden the BPF JIT against spraying; a small cost, a real mitigation.
+net.core.bpf_jit_harden = 2
+
+# A core dump in a predictable path is a memory-disclosure gift. The default
+# sends it nowhere; a site that debugs a service declares a collector instead
+# (`hardening_core_pattern`), because `|/bin/false` removes EVERY core, the
+# service's as well as a leak.
+kernel.core_pattern = {{ hardening_core_pattern }}
+
+# IPv6 router advertisements are refused: the product's IPv6 is not routed by a
+# local RA, and accepting one would let an on-link attacker change the routes
+# (`accept_redirects=0` above does not cover RAs).
+# Router advertisements are accepted on the interfaces the network role
+# declares `[ipv6] method=auto`: `accept_ra = 0` silently disabled the SLAAC
+# that declaration promises. `forwarding = 0` already refuses to act as a
+# router; accepting an RA on a host is how it learns its own address.
+net.ipv6.conf.all.accept_ra = 1
+net.ipv6.conf.default.accept_ra = 1
+
+# Unprivileged user namespaces: the largest unprivileged LPE surface. The
+# AppArmor transition (`apparmor_restrict_unprivileged_unconfined=1` + an enforced
+# `unprivileged_userns` profile) was MEASURED INEFFECTIVE on Debian: a new
+# userns process stays `unconfined`. `unprivileged_userns_clone=0` is the working
+# lever and DISABLES unprivileged user namespaces entirely. The
+# cost is rootless containers, which this product does not use (Swarm is rootful).
+kernel.unprivileged_userns_clone = 0

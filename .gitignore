@@ -1,0 +1,23 @@
+# Ansible and local artefacts; never versioned.
+*.retry
+.ansible/
+collections/
+dist/
+artifacts/
+
+# The vault PASSWORD is never in this repository, in any spelling.
+*.vault-password
+.vault-pass
+.vault_pass
+.vault_password
+vault-password.txt
+*~
+
+*.log
+__pycache__/
+*.pyc
+
+# A local agent/editor configuration is the operator's, not the product's.
+.opencode/
+.vscode/
+.agents/

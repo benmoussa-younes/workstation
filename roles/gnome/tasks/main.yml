@@ -1,0 +1,108 @@
+---
+# The GNOME session.
+#
+# Debian's own desktop task is what is installed: this role declares
+# `gnome_packages` and nothing else. GNOME is the product's only desktop.
+
+- name: The desktop session is Wayland
+  ansible.builtin.assert:
+    that:
+      - gnome_session_type == 'wayland'
+    fail_msg: >-
+      {{ inventory_hostname }} declares gnome_session_type
+      `{{ gnome_session_type }}`. This product's session is a Wayland session,
+      read back from a running GDM and from the desktop itself.
+
+- name: The current GNOME viewers are present before the meta-package
+  ansible.builtin.apt:
+    name:
+      - "{{ gnome_document_viewer }}"
+      - "{{ gnome_video_player }}"
+    state: present
+    install_recommends: "{{ gnome_install_recommends }}"
+    cache_valid_time: 3600
+
+- name: The GNOME packages are present
+  ansible.builtin.apt:
+    name: "{{ gnome_packages }}"
+    state: present
+    install_recommends: "{{ gnome_install_recommends }}"
+    cache_valid_time: 3600
+
+# Papers and Showtime are installed first, so `evince | papers` and
+# `totem | showtime` are already satisfied when the meta-package is resolved.
+# Retiring the older pair is therefore safe; autoremove stays off so the role
+# removes exactly what it names.
+- name: The older GNOME viewers are retired
+  ansible.builtin.apt:
+    name:
+      - "{{ gnome_retired_document_viewer }}"
+      - "{{ gnome_retired_video_player }}"
+    state: absent
+    autoremove: false
+  when: not ansible_check_mode
+
+# The X11 session is what this product does not ship. `gnome-shell` on X11 is
+# still selectable at the login screen; the declaration below is what the session
+# chooser shows on a fresh install, not everything a login can force.
+#
+# Read AFTER the install: in check mode the package install is only reported, so
+# this fact is about the real machine, never about a simulation.
+- name: The Wayland session is the one the desktop offers
+  ansible.builtin.stat:
+    path: /usr/share/wayland-sessions/gnome.desktop
+  register: gnome_wayland_session
+
+- name: The desktop has a Wayland session to start
+  ansible.builtin.assert:
+    that:
+      - gnome_wayland_session.stat.exists
+    fail_msg: >-
+      {{ inventory_hostname }} has no
+      /usr/share/wayland-sessions/gnome.desktop. GDM would have nothing to start
+      but X11, which this product does not ship; converge on a host whose
+      `gnome-core` install has completed.
+  when: not ansible_check_mode
+
+# The list of packages that would mean a second desktop is installed. Read from
+# dpkg, not guessed: a package another repository publishes cannot be named
+# until it is on the machine, and this check runs after the install.
+- name: The installed packages are read
+  ansible.builtin.package_facts:
+    manager: apt
+  when: not ansible_check_mode
+
+- name: The current GNOME viewers are installed and the older pair is gone
+  ansible.builtin.assert:
+    that:
+      - gnome_document_viewer in ansible_facts.packages
+      - gnome_video_player in ansible_facts.packages
+      - gnome_retired_document_viewer not in ansible_facts.packages
+      - gnome_retired_video_player not in ansible_facts.packages
+    fail_msg: >-
+      {{ inventory_hostname }} does not carry the current GNOME viewers
+      ({{ gnome_document_viewer }}, {{ gnome_video_player }}) or still carries
+      the older pair ({{ gnome_retired_document_viewer }},
+      {{ gnome_retired_video_player }}). Papers and Showtime must be installed
+      before gnome-core so its alternatives are satisfied.
+  when: not ansible_check_mode
+
+
+# `gnome-shell` is the session; the arch is the product's, and a wrong one is a
+# package that installs and fails at login.
+- name: The shell runs on Wayland
+  ansible.builtin.command:
+    cmd: /usr/bin/gnome-shell --version
+  register: gnome_shell_version
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The shell is the GNOME 48 line
+  ansible.builtin.assert:
+    that:
+      - gnome_shell_version.stdout is match('^GNOME Shell [0-9]+\.')
+    fail_msg: >-
+      {{ inventory_hostname }}: `gnome-shell --version` answered
+      `{{ gnome_shell_version.stdout | default('') }}`, which is not a GNOME
+      shell.
+  when: not ansible_check_mode

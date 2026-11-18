@@ -1,0 +1,8 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The same base limit for the services systemd starts. It is
+# read at manager start: it takes effect at the next boot (or a `daemon-reexec`),
+# which the operator chooses -- the product does not re-exec PID1 on a converge.
+[Manager]
+DefaultLimitNOFILE={{ hardening_limits_nofile }}

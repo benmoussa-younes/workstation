@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The profile store and the radio's identity.
+#
+# `keyfile` is the only store this product writes: the Wi-Fi profile and the
+# adopted profile are keyfiles under `/etc/NetworkManager/system-connections`,
+# and the ifupdown plugin is dropped with the owner it served. A site that
+# brought its own ifupdown configuration is migrated by the `boot` mode, not left
+# to a second plugin.
+[main]
+plugins=keyfile
+
+[device]
+# A site that reserves the address by MAC reads the hardware address on the air,
+# not a random one per scan. `permanent` also keeps a reconnect on the same
+# lease when the access point binds sessions to a MAC.
+wifi.scan-rand-mac-address=no
+wifi.cloned-mac-address=permanent
+wifi.backend=wpa_supplicant

@@ -1,0 +1,92 @@
+---
+argument_specs:
+  main:
+    short_description: The machine identity.
+    description:
+      - >-
+        Names the product on the machine. The operating system stays Debian,
+        but os-release, issue and issue.net carry the product name and its
+        EDITION version (`Workstation Edition 0.1.0`). The static `/etc/motd`
+        is the one-line legal reminder shown under the login dashboard.
+    author: Younes BENMOUSSA
+    options:
+      identity_product:
+        type: str
+        required: false
+        choices: [workstation-gnome]
+        description: >-
+          The product this machine belongs to. One value, because this file
+          ships one product; `server` is refused, since it would name the wrong
+          edition on every banner.
+      identity_name:
+        type: str
+        required: false
+        description: The display name; derived from the product by default.
+      identity_version:
+        type: str
+        required: false
+        description: >-
+          The EDITION's version, shown to a human (`Workstation
+          Edition 0.1.0`). It is not the distribution's version, which stays in the
+          machine-readable fields a package manager resolves against.
+      identity_hostname:
+        type: str
+        required: false
+        description: >-
+          The host name to declare. Empty leaves the installed name untouched;
+          a non-empty value sets `/etc/hostname` and the running name.
+      identity_update_motd_scripts:
+        type: str
+        required: false
+        description: >-
+          Debian's dynamic motd directory. `10-uname` is made non-executable so
+          `run-parts` skips it: the kernel line above the product's
+          `/etc/motd` is noise on every login.
+      identity_os_release_file:
+        type: str
+        required: false
+        description: The os-release file to own (the distribution file is diverted).
+      identity_os_release_divert:
+        type: str
+        required: false
+        description: Where the distribution os-release is preserved.
+      identity_home_url:
+        type: str
+        required: false
+        description: The HOME_URL line; empty omits it.
+      identity_support_url:
+        type: str
+        required: false
+        description: The SUPPORT_URL line; empty omits it.
+      identity_bug_report_url:
+        type: str
+        required: false
+        description: The BUG_REPORT_URL line; empty omits it.
+      identity_access_warning:
+        type: str
+        required: false
+        description: The warning shown on the login banners.
+      identity_access_footer:
+        type: str
+        required: false
+        description: >-
+          The one-line reminder `/etc/motd` shows after authentication, under
+          the dashboard the `shell` role renders.
+      identity_names:
+        type: dict
+        required: false
+        description: >-
+          The display name per product identity, keyed by `identity_product`.
+          It holds `workstation-gnome` and nothing else.
+      identity_debian_release_name:
+        type: str
+        required: false
+        description: >-
+          The Debian codename written to `VERSION_CODENAME`. Derived from
+          `/etc/debian_version` by the role, not a site value.
+      identity_debian_major:
+        type: str
+        required: false
+        description: >-
+          The Debian major release derived from `/etc/debian_version`; exposed
+          for the roles that build a Debian repository URL.

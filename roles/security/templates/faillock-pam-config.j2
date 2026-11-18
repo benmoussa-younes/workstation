@@ -1,0 +1,17 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The `authfail`/`authsucc` half of the faillock stack, which
+# must run AFTER pam_unix -- hence the lower priority. `even_deny_root` is left
+# OFF: root is never locked, so a recovery path always exists. The `preauth` half
+# is the `workstation-faillock-preauth` profile.
+Name: Workstation faillock lockout
+Default: no
+Priority: 0
+Auth-Type: Primary
+Auth:
+	[default=die] pam_faillock.so authfail
+	sufficient pam_faillock.so authsucc
+Account-Type: Primary
+Account:
+	required pam_faillock.so

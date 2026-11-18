@@ -1,0 +1,117 @@
+---
+# The server's declared tuning (`performance`). The audit found every one of
+# these at Debian's default — swappiness 60, vfs_cache_pressure 100, THP
+# `always`, dirty ratios scaled to RAM — which is the same as nobody having
+# decided. Each value here is a choice with a reason, and the file is the
+# single record of it.
+#
+# It sorts BEFORE `60-hardening.conf` on purpose: sysctl precedence is by file
+# name, so a hypothetical collision would resolve to the security value. The
+# role asserts the two files never declare the same key.
+
+performance_sysctl_file: /etc/sysctl.d/50-performance.conf
+performance_tmpfiles_file: /etc/tmpfiles.d/50-performance.conf
+
+# Swap, and how eagerly the kernel uses it.
+#
+# The SIZE of the swap is the site's day-0 decision: it is what the machine was
+# partitioned or provisioned with, and this role neither creates nor checks it.
+# What is declared here is how the kernel should use the swap it is given.
+#
+# The value follows the DEVICE: `vm.swappiness=10` is right for a slow swap (a
+# disk). A machine with no swap at all does worse: without swap the kernel cannot
+# evict cold anonymous pages, so memory pressure turns into an OOM kill cascade
+# instead of a slowdown. zram is NOT implemented by this role in this release; a site
+# that wants a compressed swap declares it in its own role.
+#
+#   none     no swap at all: nothing to tune, but the kind is still declared so
+#            the template renders one consistent file.
+#   disk     a swap partition or file on a disk.
+performance_swap_kind: disk
+
+performance_swappiness: 10
+
+# Flush by BYTES, not by ratio: a ratio silently scales the write burst with the
+# host's RAM, so a big host would buffer far more dirty data than intended.
+performance_dirty_background_bytes: 67108864
+performance_dirty_bytes: 268435456
+performance_dirty_expire_centisecs: 3000
+performance_dirty_writeback_centisecs: 500
+
+# Reclaim dentries and inodes less eagerly: the working set is small and the
+# cache is worth keeping (Debian's default of 100 is aggressive for a server).
+performance_vfs_cache_pressure: 50
+
+# Transparent huge pages: `madvise` lets a program ask for them, instead of the
+# kernel forcing them everywhere (`always`). There is no sysctl for this on
+# the current Debian release; a tmpfiles drop-in applies it.
+performance_thp: madvise
+
+# --- the network stack -------------------------------------------------------
+#
+# These are `net.*` keys, and they are performance, not hardening: they are
+# declared in their OWN file so `60-hardening.conf` keeps owning the security
+# side of the same namespace, and the role asserts the boundary.
+#
+# The congestion control is left to the kernel (empty) unless a site chooses
+# one: on a controlled LAN the measurement did not separate BBR from cubic
+# (the proof host, 2026-10-21: 200 MiB over SSH + Wi-Fi, BBR 15.0/15.3/16.1 s,
+# cubic 15.5/15.2/20.5 s -- the spread of a radio, not a verdict). BBR earns
+# its keep on a lossy or long path, not on a two-metre access point. `bbr`
+# writes `net.core.default_qdisc = fq` and loads the module at boot.
+performance_network_sysctl_file: /etc/sysctl.d/51-performance-network.conf
+performance_tcp_congestion_control: ""
+performance_modules_load_file: /etc/modules-load.d/50-performance.conf
+
+# TCP Fast Open for BOTH sides: a client that has the cookie sends data in the
+# SYN, and this host accepts one. `1` was the old client-only default.
+performance_tcp_fastopen: 3
+
+# Do not restart a long-lived connection's window from scratch after it went
+# idle: an SSH session or a database link would pay slow start again.
+performance_tcp_slow_start_after_idle: 0
+
+# Probe the path MTU instead of black-holing a too-large packet: a Wi-Fi or VPN
+# path hides ICMP "fragmentation needed" often enough to be worth it.
+performance_tcp_mtu_probing: 1
+
+# The per-CPU backlog before the stack drops frames under a burst; Debian's
+# 1000 is small for a 1 Gbit/s radio that aggregates frames.
+performance_netdev_max_backlog: 4096
+
+# The CPU frequency governor on bare metal. Empty means "the machine's own
+# choice": the role then REPORTS the governor instead of asserting one, which is
+# the right default for a host whose governor was set deliberately (a laptop's
+# power profile, a firmware default, a vendor tool). Set a value to make the
+# governor a checked property; the role never writes it either way, so it
+# reports drift instead of fighting whatever set it.
+#
+# `powersave` is what this hardware offers beside `performance`: on such a CPU,
+# `schedutil` does not exist, and a default naming it fails every bare-metal
+# host that ships this firmware.
+performance_cpu_governor: ""
+performance_cpufreq_path: /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+
+# The tools the role observes with. Empty declares observation off.
+performance_observe_packages:
+  - ethtool
+
+# The D-Bus provider. `broker` replaces `dbus-daemon` with `dbus-broker` through
+# an alias of `dbus.service` to `dbus-broker.service`; `daemon` leaves Debian's
+# own bus in place.
+#
+# No performance claim is made here: the figures that circulate for dbus-broker
+# have no reproducible public source. The provider is chosen for consistency
+# with the systemd stack, the same choice the Server collection makes.
+#
+# The switch needs a REBOOT -- the running bus cannot be replaced under its
+# clients. Measured on the testing VM (Debian 13, dbus-broker 37-2): the system
+# bus, the systemd user manager bus and a full GNOME/Wayland session ran on
+# `dbus-broker` with no failed unit, the shell's extension interface answering,
+# the portals up and the journal readable by the human account. `dbus-daemon`
+# itself stays installed: Debian's `dbus` package owns it, the accessibility
+# bus (`at-spi`) and `dbus-run-session` still use it, and removing it would
+# break packages that depend on it. What changes is the bus of the systemd
+# units: `broker` means those, and only those, are served by `dbus-broker`.
+performance_dbus_override: /etc/systemd/system/dbus.service
+performance_dbus_provider: broker

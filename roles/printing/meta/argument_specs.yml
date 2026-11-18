@@ -1,0 +1,59 @@
+---
+argument_specs:
+  main:
+    short_description: CUPS, the print scheduler and the virtual PDF queue.
+    description:
+      - >-
+        Installs CUPS and `printer-driver-cups-pdf` (Debian's binary package
+        name; `cups-pdf` is only the source package in the current Debian release), enables and
+        starts the scheduler, creates the declared PDF queue with the declared
+        PPD and options when it is absent, and reads the scheduler, the queue's
+        state and its device URI back. A physical printer is site data and is not
+        declared here.
+    author: Younes BENMOUSSA
+    options:
+      printing_packages:
+        type: list
+        elements: str
+        required: false
+        description: The CUPS packages; the full list is in `defaults/main.yml`.
+      printing_service:
+        type: str
+        required: false
+        description: The print scheduler's systemd unit.
+      printing_manage_pdf_queue:
+        type: bool
+        required: false
+        description: >-
+          Whether the PDF queue is declared. False leaves an existing printing
+          configuration untouched and skips every queue task.
+      printing_pdf_queue:
+        type: str
+        required: false
+        description: The queue's name.
+      printing_pdf_device:
+        type: str
+        required: false
+        description: The queue's device URI (the CUPS-PDF backend).
+      printing_pdf_ppd:
+        type: str
+        required: false
+        description: >-
+          The PPD file the queue uses, by absolute path. It is passed with
+          `lpadmin -P`, which takes a file; `-m` takes a model name from CUPS's
+          model directory, where this PPD is not.
+      printing_pdf_options:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The queue's server-side defaults, as `name=value`, each passed as
+          `-o name=value` at creation.
+      printing_scheduler_retries:
+        type: int
+        required: false
+        description: How many times to ask the scheduler whether it is running.
+      printing_scheduler_delay:
+        type: int
+        required: false
+        description: Seconds between those attempts.

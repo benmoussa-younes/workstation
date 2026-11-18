@@ -1,0 +1,6 @@
+---
+- name: Reload the udev rules
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: udevadm control --reload-rules
+  when: not ansible_check_mode
+  changed_when: true

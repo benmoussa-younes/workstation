@@ -1,0 +1,58 @@
+---
+argument_specs:
+  main:
+    short_description: The product's visuals, applied.
+    description:
+      - >-
+        Installs this product's wallpaper, GDM logo and GRUB image from its own
+        `assets/`, and points the boot menu at the image. The dconf keys that
+        SELECT the wallpaper belong to the `dconf` role; this role owns the
+        files they name.
+    author: Younes BENMOUSSA
+    options:
+      branding_asset_dir:
+        type: str
+        required: false
+        description: The directory the visuals are read from (this product's own).
+      branding_wallpaper_source:
+        type: str
+        required: false
+        description: The wallpaper as shipped.
+      branding_wallpaper_dir:
+        type: str
+        required: false
+        description: The shared background directory.
+      branding_wallpaper:
+        type: str
+        required: false
+        description: The wallpaper as installed; the path the desktop selects.
+      branding_logo_source:
+        type: str
+        required: false
+        description: The mark as shipped, used for GDM's logo.
+      branding_gdm_logo_dir:
+        type: str
+        required: false
+        description: The directory GDM reads its own assets from.
+      branding_gdm_logo:
+        type: str
+        required: false
+        description: GDM's logo as installed.
+      branding_grub_image_source:
+        type: str
+        required: false
+        description: The boot menu's image as shipped.
+      branding_grub_image_dir:
+        type: str
+        required: false
+        description: The directory the bootloader can read.
+      branding_grub_image:
+        type: str
+        required: false
+        description: The boot menu's image as installed.
+      branding_grub_default:
+        type: str
+        required: false
+        description: >-
+          The file that declares the boot menu's image. The `hardening` role
+          writes another key of the same file; neither rewrites it.

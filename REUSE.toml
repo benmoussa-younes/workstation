@@ -1,0 +1,34 @@
+version = 1
+SPDX-PackageName = "workstation"
+SPDX-PackageSupplier = "Younes BENMOUSSA <younes.benmoussa@pm.me>"
+SPDX-PackageDownloadLocation = "https://github.com/benmoussa-younes/workstation"
+
+# Default: the product's Ansible code and the repository tooling.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Younes BENMOUSSA <younes.benmoussa@pm.me>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Documentation is content, licensed separately from the code.
+[[annotations]]
+path = ["README.md", "AGENTS.md", "NOTICE", "CONTRIBUTING.md", "SECURITY.md", "**/*.md", "CHANGELOG.md"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Younes BENMOUSSA <younes.benmoussa@pm.me>"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# The visuals are the product's own, under the same licence as the code.
+[[annotations]]
+path = ["assets/branding/*.png", "assets/branding/*.svg"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Younes BENMOUSSA <younes.benmoussa@pm.me>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The Plymouth theme: the script derives from Debian's `softwaves`; the emerald
+# images are new work by the copyright holder. The whole theme keeps the GPL
+# licence and its upstream authors.
+[[annotations]]
+path = ["assets/branding/theme/workstation/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2009 Canonical Ltd.; 2010-2016 Aurélien Couderc; 2014-2016 Juliette Taka; Alberto Milone; 2026 Younes BENMOUSSA"
+SPDX-License-Identifier = "GPL-2.0-or-later"

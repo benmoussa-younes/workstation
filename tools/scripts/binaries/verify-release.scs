@@ -1,0 +1,157 @@
+#!/usr/bin/scripts run
+# verify-release.scs — check the assets `release.scs` built.
+#
+#   scripts run tools/scripts/binaries/verify-release.scs
+#   scripts run tools/scripts/binaries/verify-release.scs <directory>
+#
+# It checks the checksums, the collection archive and the source archive. It
+# writes nothing and ends with exactly one VERDICT line.
+
+import "../modules/verdict.scs" as verdict
+import "../modules/repo.scs" as repo
+
+let root: path = repo.root_path_from(process.script_path())
+let arguments = process.arguments()
+let mutable directory = root / "dist"
+if arguments.length() > 1 {
+    io.write_standard_error_line("usage: verify-release.scs [directory]")
+    process.exit_with_code(2)
+}
+if arguments.length() == 1 {
+    directory = arguments.get_at_index(0).value_or("dist").to_path()
+}
+
+function note(ok_value: boolean, name: string, detail: string) -> list<string> {
+    if ok_value {
+        io.write_standard_output_line("PASS " + name)
+        return []
+    }
+    let line = verdict.defect(name, "FAIL", detail.trim_whitespace())
+    io.write_standard_output_line(line)
+    return [line]
+}
+
+function any_starts(entries: list<string>, prefix: string) -> boolean {
+    for entry in entries {
+        if entry.starts_with(prefix) {
+            return true
+        }
+    }
+    return false
+}
+
+function read_text(root: path, relative: string) -> string {
+    match filesystem.read_file(root / relative) {
+        ok(content) => {
+            return content
+        }
+        error(failure) => {
+            return ""
+        }
+    }
+}
+
+function listing(archive: path) -> list<string> {
+    match process.run(process.request("tar", ["-tzf", archive.to_string()])) {
+        ok(completed) => {
+            if completed.exit_code == 0 {
+                return completed.standard_output.lines()
+            }
+            return []
+        }
+        error(failure) => {
+            return []
+        }
+    }
+}
+
+let version = read_text(root, "VERSION").trim_whitespace()
+let collection_name = "benmoussa-workstation-{version}.tar.gz"
+let source_name = "workstation-{version}-src.tar.gz"
+let mutable failures: list<string> = []
+
+for name in [collection_name, source_name, "SHA256SUMS"] {
+    for problem in note(filesystem.path_exists(directory / name), "asset " + name, (directory / name).to_string()) {
+        failures.append(problem)
+    }
+}
+
+if filesystem.path_exists(directory / "SHA256SUMS") {
+    match process.run(process.request("sha256sum", ["-c", "SHA256SUMS"]).with_working_directory(directory)) {
+        ok(completed) => {
+            for problem in note(completed.exit_code == 0, "checksums", completed.standard_error.trim_whitespace()) {
+                failures.append(problem)
+            }
+        }
+        error(failure) => {
+            for problem in note(false, "checksums", "cannot run sha256sum: {failure.kind}") {
+                failures.append(problem)
+            }
+        }
+    }
+}
+
+if filesystem.path_exists(directory / collection_name) {
+    let entries = listing(directory / collection_name)
+    let required = ["roles/", "playbooks/", "meta/runtime.yml", "MANIFEST.json", "FILES.json", "README.md", "CHANGELOG.md", "LICENSE", "NOTICE", "REUSE.toml", "LICENSES/"]
+    let forbidden = ["docs/", "ci/", "bench/", "runs/", ".github/", "tools/", ".opencode/", "inventories/", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md"]
+    let mutable missing: list<string> = []
+    for entry in required {
+        if not any_starts(entries, entry) {
+            missing.append(entry)
+        }
+    }
+    let mutable present: list<string> = []
+    for entry in forbidden {
+        if any_starts(entries, entry) {
+            present.append(entry)
+        }
+    }
+    for problem in note(missing.length() == 0, "collection content", missing.join(", ")) {
+        failures.append(problem)
+    }
+    for problem in note(present.length() == 0, "collection exclusion", present.join(", ")) {
+        failures.append(problem)
+    }
+}
+
+if filesystem.path_exists(directory / source_name) {
+    let entries = listing(directory / source_name)
+    let prefix = "workstation-{version}/"
+    let required = [
+        prefix + "VERSION",
+        prefix + "galaxy.yml",
+        prefix + "README.md",
+        prefix + "CHANGELOG.md",
+        prefix + "playbooks/site.yml",
+        prefix + "inventories/example/hosts.yml",
+        prefix + "tools/scripts/binaries/gate.scs",
+        prefix + "roles/"
+    ]
+    let forbidden = [prefix + ".git/", prefix + "docs/", prefix + "ci/", prefix + "bench/", prefix + "runs/", prefix + ".opencode/"]
+    let mutable missing: list<string> = []
+    for entry in required {
+        if not any_starts(entries, entry) {
+            missing.append(entry)
+        }
+    }
+    let mutable present: list<string> = []
+    for entry in forbidden {
+        if any_starts(entries, entry) {
+            present.append(entry)
+        }
+    }
+    for problem in note(missing.length() == 0, "source content", missing.join(", ")) {
+        failures.append(problem)
+    }
+    for problem in note(present.length() == 0, "source exclusion", present.join(", ")) {
+        failures.append(problem)
+    }
+}
+
+if failures.length() == 0 {
+    io.write_standard_output_line(verdict.line(true))
+    process.exit_with_code(verdict.code(true))
+}
+io.write_standard_output_line(verdict.line(false))
+process.exit_with_code(verdict.code(false))

@@ -1,0 +1,9 @@
+---
+# GDM reads its configuration at start. A restart ends every graphical session
+# on the machine, so this handler is the one place the product says so: the
+# converge is run over SSH, never from the session it restarts.
+- name: Restart GDM
+  ansible.builtin.systemd_service:
+    name: "{{ display_manager_service }}"
+    state: restarted
+  when: not ansible_check_mode

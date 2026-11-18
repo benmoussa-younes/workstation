@@ -1,0 +1,94 @@
+# NOTICE
+
+Workstation Edition is composed of several works under different licences. The
+SPDX mapping is in `REUSE.toml`; the full texts are in `LICENSES/`.
+
+## The product code
+
+Copyright 2026 Younes BENMOUSSA <younes.benmoussa@pm.me>.
+Licensed under the GNU Affero General Public License, version 3 or later
+(`AGPL-3.0-or-later`). See `LICENSE` and
+`LICENSES/AGPL-3.0-or-later.txt`.
+
+Several base roles (`common`, `journald`, `hardening`, `performance`,
+`identity`, `security`, `resolver`, `time`, `keyboard`) derive from the Server
+collection, `benmoussa.server`, and are adapted here. Both collections are
+`AGPL-3.0-or-later` and by the same author.
+
+## The documentation
+
+Copyright 2026 Younes BENMOUSSA <younes.benmoussa@pm.me>.
+Licensed under Creative Commons Attribution-ShareAlike 4.0 International
+(`CC-BY-SA-4.0`). See `LICENSES/CC-BY-SA-4.0.txt`.
+
+## The visuals
+
+The product ships an emerald visual set -- a wallpaper, a GDM mark and a GRUB
+image -- under the same `AGPL-3.0-or-later` as the code. The displayed name is
+`Workstation Edition`; a fork or a site that wants its own marks declares its
+own files through the variables `README.md` documents and keeps its own licence
+for them. No proprietary visual ships in this work.
+
+## The Plymouth theme
+
+`assets/branding/theme/workstation/` is the boot splash. Its script derives from
+Debian's `softwaves` theme; the emerald images are new work by Younes
+BENMOUSSA. The whole theme is distributed under `GPL-2.0-or-later`. Copyright:
+
+- 2009 Canonical Ltd.;
+- 2010-2016 Aurélien Couderc;
+- 2014-2016 Juliette Taka;
+- Written by Alberto Milone, based on the example provided with the "script
+  plugin" written by Charlie Brej;
+- the Workstation boot, shutdown and reboot messages appended to the stock
+  script are Copyright 2026 Younes BENMOUSSA.
+
+Unlike a server, this product configures the theme: the `plymouth` role installs
+it, selects it and compiles it into the initramfs.
+
+See `LICENSES/GPL-2.0-or-later.txt`.
+
+## External packages installed at converge
+
+VSCodium is a separate MIT-licensed work. The `developer` role adds VSCodium's
+official APT repository and installs the `codium` package only when the
+`vscodium` group is selected in `developer_tools`; the product neither
+redistributes nor relicenses it. The repository key is pinned by checksum and
+fingerprint in `roles/developer/defaults/main.yml`.
+
+The Scripts interpreter is a separate work under the GNU General Public
+License, version 3 or later (`GPL-3.0-or-later`), published by the same author at
+<https://github.com/benmoussa-younes/scripts>. The `developer` role installs its
+latest Debian release package only when the `scripts` group is selected, after
+verifying the release's `SHA256SUMS`. The product neither redistributes nor
+relicenses it.
+
+Mozilla Firefox is a separate work under the Mozilla Public License 2.0. The
+`applications` role adds Mozilla's official APT repository and installs the
+`firefox` package; the product neither redistributes nor relicenses it. The
+repository key is pinned by checksum and fingerprint in
+`roles/applications/defaults/main.yml`.
+
+OpenCode is a separate work under its own upstream licence. The
+`coding_agents` role downloads its vendor installer only when the role is
+enabled, verifies the installer against a declared SHA-256, and installs the
+pinned version for the human account; the product neither redistributes nor
+relicenses the binary, and it declares no model, provider or credential.
+
+Steam is proprietary software. The opt-in `gaming` role installs Debian's
+`steam-installer` package from `contrib` and the 32-bit graphics stack it
+needs; the product neither redistributes nor relicenses Steam itself, and the
+role is inert unless `gaming_enabled` is true.
+
+The .NET SDK is a separate MIT-licensed work. The `developer` role adds
+Microsoft's official Debian repository and installs `dotnet-sdk-10.0` only
+when `developer_tools` selects the `dotnet` group; the product neither
+redistributes nor relicenses it. The key is pinned by checksum and fingerprint
+in `roles/developer/defaults/main.yml`.
+
+## Ansible and Debian
+
+Ansible is a separate work, installed by the controller. Debian is a separate
+distribution, installed on the target; `gnome-core` and every other package come
+from it. Neither is redistributed by this collection. The product uses only
+`ansible.builtin`; `requirements.yml` declares no external collection.

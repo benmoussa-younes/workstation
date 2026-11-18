@@ -1,0 +1,113 @@
+---
+argument_specs:
+  main:
+    short_description: The coding agents installed for the human account.
+    description:
+      - >-
+        Installs OpenCode from the vendor's own installer
+        (`https://opencode.ai/v2/install`) for `coding_agents_user`, only when
+        the binary is absent. The installer is PINNED: the role downloads it
+        once to a versioned path, verifies its SHA-256, then runs it with
+        `--version <coding_agents_opencode_version> --no-modify-path`. An
+        enabled role without both values fails before the download. The PATH is
+        declared in `/etc/profile.d` instead of being appended to the account's
+        shell rc.
+      - >-
+        The configuration is the machine-wide one OpenCode V2 reads:
+        `/etc/opencode/opencode.json`, with the published `$schema`, automatic
+        updates set to `notify` and the formatter on. The model, the providers
+        and the credentials belong to the account and are never declared here.
+      - >-
+        The installer needs `curl` and `tar` (the `common` role provides them)
+        and network access to `opencode.ai` and `registry.npmjs.org`.
+    author: Younes BENMOUSSA
+    options:
+      coding_agents_user:
+        type: str
+        required: false
+        description: >-
+          The account the agents are installed for. Defaults to
+          `workstation_user`; an empty value fails the run.
+      coding_agents_home:
+        type: str
+        required: false
+        description: >-
+          The account's home. Empty reads it from the account record
+          (`getent passwd`) instead of guessing a path from the account name.
+      coding_agents_opencode_enabled:
+        type: bool
+        required: false
+        description: >-
+          Whether OpenCode is installed and configured at all. False by default:
+          the installer is a vendor script, and a site opts in with a pin.
+      coding_agents_opencode_install_url:
+        type: str
+        required: false
+        description: The vendor's installer URL.
+      coding_agents_opencode_install_sha256:
+        type: str
+        required: false
+        description: >-
+          The SHA-256 of the installer served at that URL, 64 lowercase hex
+          digits. Mandatory when the role is enabled; get_url refuses a mismatch.
+      coding_agents_opencode_version:
+        type: str
+        required: false
+        description: >-
+          The version passed to the installer's `--version`, without the leading
+          `v` (for example `1.0.2`). Mandatory when the role is enabled; the
+          installed binary is read back and must report it.
+      coding_agents_opencode_installer_cache_dir:
+        type: str
+        required: false
+        description: Where the verified installer is cached.
+      coding_agents_opencode_installer_path:
+        type: str
+        required: false
+        description: >-
+          The cached installer path; it carries the pinned version, so a version
+          bump downloads a new file instead of reusing the old one.
+      coding_agents_opencode_bin_dir:
+        type: str
+        required: false
+        description: >-
+          Where the installer writes the binary: `$HOME/.opencode/bin`, the
+          path its script uses.
+      coding_agents_opencode_bin:
+        type: str
+        required: false
+        description: The installed binary the role reads back.
+      coding_agents_opencode_reinstall:
+        type: bool
+        required: false
+        description: >-
+          Re-run the installer on a host that already carries the binary. False
+          keeps the converge idempotent; a version bump is deliberate.
+      coding_agents_system_config_dir:
+        type: str
+        required: false
+        description: >-
+          The machine-wide configuration directory OpenCode V2 reads
+          (`/etc/opencode`).
+      coding_agents_opencode_config_file:
+        type: str
+        required: false
+        description: The generated `opencode.json`.
+      coding_agents_profile_file:
+        type: str
+        required: false
+        description: >-
+          The `/etc/profile.d` file that puts `$HOME/.opencode/bin` on the PATH
+          of every login shell.
+      coding_agents_opencode_config:
+        type: dict
+        required: false
+        description: >-
+          The machine-wide configuration, rendered as JSON. The product declares
+          the schema, `update: notify` and the formatter; the account declares
+          its model and providers.
+      coding_agents_required_commands:
+        type: list
+        elements: str
+        required: false
+        description: The commands the installer needs; the role asserts them.

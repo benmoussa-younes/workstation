@@ -1,0 +1,25 @@
+#!/usr/bin/scripts run
+# verdict.scs — the one verdict format this gate imports.
+#
+#   import "../modules/verdict.scs" as verdict
+#
+# `defect` builds the line of one finding, so the gate reports every check
+# before it verdicts.
+
+public function line(success: boolean) -> string {
+    if success {
+        return "VERDICT: PASS"
+    }
+    return "VERDICT: FAIL"
+}
+
+public function code(success: boolean) -> integer {
+    if success {
+        return 0
+    }
+    return 1
+}
+
+public function defect(name: string, control: string, detail: string) -> string {
+    return "DEFECT {name}: {control} {detail}"
+}

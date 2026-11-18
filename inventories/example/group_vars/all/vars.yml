@@ -1,0 +1,23 @@
+---
+# Documentation values only. This file shows what a workstation site declares on
+# top of the product's defaults.
+#
+# `security_ssh_sources` is NOT left empty: the firewall refuses silence, and an
+# empty list means "sshd is reachable from anywhere", which a site must say
+# explicitly (`security_ssh_sources_anywhere: true`).
+security_ssh_sources:
+  - 192.0.2.0/24
+
+# A fresh Debian Wi-Fi host: the `boot` mode writes the NetworkManager keyfile.
+# Declare the static pair, or leave both empty to carry the running link's
+# address and gateway. `method=manual` learns no resolver, so declare
+# `network_boot_dns` here or `resolver_fallback_dns` below; the role refuses a
+# run with neither.
+network_boot_address: 192.0.2.10/24
+network_boot_gateway: 192.0.2.1
+network_boot_dns:
+  - 192.0.2.1
+
+# The Wi-Fi passphrase is the only secret this example can need. It is mapped
+# from the vault, so no secret is written here. A wired site can leave it empty.
+network_wifi_psk: "{{ vault_network_wifi_psk | default('') }}"

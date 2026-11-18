@@ -1,0 +1,78 @@
+---
+argument_specs:
+  main:
+    short_description: The opt-in gaming stack.
+    description:
+      - >-
+        Installs Debian's Steam installer, the controller rules and the
+        gamemode/mangohud helpers, and enables the i386 architecture for
+        Steam's 32-bit libraries and mesa/vulkan stack. The role is inert unless
+        the site sets `gaming_enabled: true`. It requires Debian `contrib` for
+        `steam-installer` and i386 for its dependencies; it fails with a message
+        naming both when the declared package sources do not serve them, and it
+        never adds a vendor repository. Steam is proprietary; the exception is
+        deliberate and opt-in.
+    author: Younes BENMOUSSA
+    options:
+      gaming_enabled:
+        type: bool
+        required: false
+        description: >-
+          Whether the gaming stack is selected. False installs nothing and
+          leaves the host untouched.
+      gaming_foreign_architecture:
+        type: str
+        required: false
+        choices:
+          - i386
+        description: >-
+          The foreign architecture Steam's 32-bit libraries need. Only i386 is
+          accepted: the product is amd64 and Steam's Linux client is 32-bit.
+      gaming_steam_package:
+        type: str
+        required: false
+        description: >-
+          The Debian Steam installer package. It lives in `contrib`; the role
+          does not install Valve's repository.
+      gaming_debian_suite:
+        type: str
+        required: false
+        description: >-
+          The Debian suite the package sources name, taken from the identity
+          role. A site does not override it.
+      gaming_debian_sources_file:
+        type: str
+        required: false
+        description: >-
+          The Debian sources file the role adds `contrib` to when the stack is
+          enabled. The current suite and its `-updates` line are rewritten once;
+          a site's `-security` line is left to the site. A deb822
+          `.sources` file is left to the site as well.
+      gaming_packages:
+        type: list
+        elements: str
+        required: false
+        description: The amd64 packages the gaming stack declares.
+      gaming_i386_packages:
+        type: list
+        elements: str
+        required: false
+        description: The i386 graphics packages Steam links against.
+      gaming_required_groups:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The account groups the desktop role owns; a host missing one is
+          refused rather than repaired here.
+      gaming_userns_sysctl:
+        type: str
+        required: false
+        description: >-
+          The sysctl drop-in that re-enables unprivileged user namespaces for
+          Steam's pressure-vessel sandbox. It loads after the hardening role's
+          `60-hardening.conf`, which disables them on a non-gaming host.
+      gaming_package_cache_valid_time:
+        type: int
+        required: false
+        description: The apt cache validity in seconds.

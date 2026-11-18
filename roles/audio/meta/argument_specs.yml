@@ -1,0 +1,63 @@
+---
+argument_specs:
+  main:
+    short_description: The PipeWire stack and media codecs, installed and declared; the session proof is after login.
+    description:
+      - >-
+        Installs the declared PipeWire packages and the GStreamer/ALSA codecs,
+        refuses a second sound server (PulseAudio owns the same socket), and
+        asserts that the configuration and the systemd USER units the packages
+        ship are present. It deliberately does not start or check the user
+        services: they belong to the account's session, and this role runs over
+        SSH before a login. the README carries the commands the
+        operator runs inside the session.
+    author: Younes BENMOUSSA
+    options:
+      audio_packages:
+        type: list
+        elements: str
+        required: false
+        description: The audio stack packages; the full list is in `defaults/main.yml`.
+      audio_fix_alsa_restore:
+        type: bool
+        required: false
+        description: >-
+          Enable the `alsa-utils` ALSA restore workaround. Default false: it is
+          not required by the audio stack. Enable it in the site `host_vars` of
+          the machine that shows the two udev warnings (Debian #1093057); the
+          role then installs `alsa-utils` and writes the corrected copy in
+          `/etc/udev/rules.d`, where udev reads it first. The package file is
+          never edited and the override retires itself once the distribution
+          ships the fix. A host without the package or the rule is not a failure
+          while the option is false.
+      audio_alsa_restore_source:
+        type: str
+        required: false
+        description: The distribution rule the corrected copy is made from.
+      audio_alsa_restore_override:
+        type: str
+        required: false
+        description: The corrected copy udev reads first.
+      audio_user_services:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The session services the stack runs, by unit name without the
+          `.service` suffix. Declared so the role can prove the units ship and so
+          the operator knows what to check after login.
+      audio_conflict_packages:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Sound servers that must not be installed beside PipeWire: they own the
+          same PulseAudio socket, and the session would have no sound.
+      audio_unit_dir:
+        type: str
+        required: false
+        description: The directory the packages install their user units into.
+      audio_config_dir:
+        type: str
+        required: false
+        description: The directory PipeWire's configuration is read from; read, never written.

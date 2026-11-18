@@ -1,0 +1,8 @@
+---
+# journald reads its own drop-ins; a restart is required (reload is not
+# available on systemd 257) and is safe: the log stream survives.
+- name: Restart systemd-journald
+  ansible.builtin.systemd_service:
+    name: systemd-journald.service
+    state: restarted
+  when: not ansible_check_mode

@@ -1,0 +1,397 @@
+#!/usr/bin/scripts run
+# gate.scs — one command, one verdict for the Workstation Edition collection.
+#
+#   scripts run tools/scripts/binaries/gate.scs
+#
+# It checks the tree, the version, the licences, the legacy names, the secret
+# and site-value shapes, the syntax of every playbook and the collection
+# archive itself. It writes nothing outside a temporary directory
+# and ends with exactly one VERDICT line.
+
+import "../modules/verdict.scs" as verdict
+import "../modules/repo.scs" as repo
+import "../modules/secrets.scs" as secrets
+
+let root: path = repo.root_path_from(process.script_path())
+
+function note(ok_value: boolean, name: string, detail: string) -> list<string> {
+    if ok_value {
+        io.write_standard_output_line("PASS " + name)
+        return []
+    }
+    let line = verdict.defect(name, "FAIL", detail.trim_whitespace())
+    io.write_standard_output_line(line)
+    return [line]
+}
+
+function read_text(root: path, relative: string) -> string {
+    match filesystem.read_file(root / relative) {
+        ok(content) => {
+            return content
+        }
+        error(failure) => {
+            return ""
+        }
+    }
+}
+
+# The program is a literal at every call site: a computed program cannot be
+# checked against the launcher list (SCRIPTS-LINT-0004). The request value keeps
+# the program name for the failure message.
+function execute(root: path, request: run_request, name: string) -> list<string> {
+    match process.run(request.with_working_directory(root)) {
+        ok(completed) => {
+            if completed.exit_code == 0 {
+                return note(true, name, "")
+            }
+            let detail = completed.standard_error + "\n" + completed.standard_output
+            return note(false, name, "exit {completed.exit_code}: {detail}")
+        }
+        error(failure) => {
+            return note(false, name, "cannot run {request.program}: {failure.kind}")
+        }
+    }
+}
+
+function tracked_files(root: path) -> list<string> {
+    match process.run(process.request("git", ["ls-files", "--cached"]).with_working_directory(root)) {
+        ok(completed) => {
+            if completed.exit_code == 0 {
+                return completed.standard_output.lines()
+            }
+            return []
+        }
+        error(failure) => {
+            return []
+        }
+    }
+}
+
+function any_starts(entries: list<string>, prefix: string) -> boolean {
+    for entry in entries {
+        if entry.starts_with(prefix) {
+            return true
+        }
+    }
+    return false
+}
+
+function first_version_after(text: string, marker: string) -> string {
+    for line in text.lines() {
+        if line.trim_whitespace().starts_with(marker) {
+            let captures = line.capture_groups(r"([0-9]+\.[0-9]+\.[0-9]+)").value_or([])
+            if captures.length() > 0 {
+                return captures.get_at_index(0).value_or("")
+            }
+        }
+    }
+    return ""
+}
+
+function git_search(root: path, arguments: list<string>, name: string) -> list<string> {
+    match process.run(process.request("git", arguments).with_working_directory(root)) {
+        ok(completed) => {
+            if completed.exit_code == 1 {
+                return note(true, name, "")
+            }
+            if completed.exit_code == 0 {
+                return note(false, name, completed.standard_output.trim_whitespace())
+            }
+            return note(false, name, "git exit {completed.exit_code}: {completed.standard_error.trim_whitespace()}")
+        }
+        error(failure) => {
+            return note(false, name, "cannot run git: {failure.kind}")
+        }
+    }
+}
+
+function check_paths(root: path) -> list<string> {
+    let files = tracked_files(root)
+    let mutable result: list<string> = []
+    for problem in note(files.length() > 0, "index is not empty", "") {
+        result.append(problem)
+    }
+    let mutable forbidden: list<string> = []
+    for file in files {
+        if file.starts_with("docs/") or file.starts_with("ci/") or file.starts_with("bench/") or file.starts_with("runs/") {
+            forbidden.append(file)
+        }
+        if file.starts_with(".opencode/") {
+            forbidden.append(file)
+        }
+        if file.starts_with("inventories/") and not file.starts_with("inventories/example/") {
+            forbidden.append(file)
+        }
+        if file.starts_with("scripts/") or file.ends_with(".bcs") {
+            forbidden.append(file)
+        }
+    }
+    for problem in note(forbidden.length() == 0, "no forbidden path", forbidden.join(", ")) {
+        result.append(problem)
+    }
+    return result
+}
+
+function check_required(root: path) -> list<string> {
+    let required = [
+        "VERSION",
+        "galaxy.yml",
+        "meta/runtime.yml",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "NOTICE",
+        "REUSE.toml",
+        "LICENSES/AGPL-3.0-or-later.txt",
+        "playbooks/site.yml",
+        "roles/README.md",
+        "inventories/example/hosts.yml",
+        "tools/scripts/binaries/gate.scs",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml"
+    ]
+    let mutable missing: list<string> = []
+    for file in required {
+        if not filesystem.path_exists(root / file) {
+            missing.append(file)
+        }
+    }
+    return note(missing.length() == 0, "required files", missing.join(", "))
+}
+
+function check_version(root: path) -> list<string> {
+    let version = read_text(root, "VERSION").trim_whitespace()
+    let mutable result: list<string> = []
+    for problem in note(version.matches(r"^[0-9]+\.[0-9]+\.[0-9]+$").value_or(false), "VERSION is semver", version) {
+        result.append(problem)
+    }
+    let galaxy = first_version_after(read_text(root, "galaxy.yml"), "version:")
+    for problem in note(galaxy == version, "galaxy.yml version", "galaxy={galaxy} VERSION={version}") {
+        result.append(problem)
+    }
+    let identity = first_version_after(read_text(root, "roles/identity/defaults/main.yml"), "identity_version:")
+    for problem in note(identity == version, "identity_version", "identity={identity} VERSION={version}") {
+        result.append(problem)
+    }
+    let changelog = read_text(root, "CHANGELOG.md")
+    for problem in note(changelog.contains("## [" + version + "]"), "CHANGELOG entry", "no `## [{version}]` heading") {
+        result.append(problem)
+    }
+    return result
+}
+
+function check_identity(root: path) -> list<string> {
+    let galaxy = read_text(root, "galaxy.yml")
+    let readme = read_text(root, "README.md")
+    let mutable result: list<string> = []
+    for problem in note(galaxy.contains("namespace: benmoussa"), "namespace", "galaxy.yml does not declare `namespace: benmoussa`") {
+        result.append(problem)
+    }
+    for problem in note(galaxy.contains("name: workstation"), "collection name", "galaxy.yml does not declare `name: workstation`") {
+        result.append(problem)
+    }
+    for problem in note(readme.contains("benmoussa.workstation"), "README FQCN", "README.md does not name `benmoussa.workstation`") {
+        result.append(problem)
+    }
+    return result
+}
+
+function sha256(root: path, relative: string) -> string {
+    match process.run(process.request("sha256sum", [relative]).with_working_directory(root)) {
+        ok(completed) => {
+            if completed.exit_code == 0 {
+                return completed.standard_output.split(" ").get_at_index(0).value_or("")
+            }
+            return ""
+        }
+        error(failure) => {
+            return ""
+        }
+    }
+}
+
+function check_licences(root: path, with_gpl: boolean) -> list<string> {
+    let agpl_hash = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    let cc_hash = "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
+    let gpl_hash = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+    let mutable result: list<string> = []
+    for problem in note(sha256(root, "LICENSE") == agpl_hash, "LICENSE text", "LICENSE is not the AGPL-3.0 text") {
+        result.append(problem)
+    }
+    for problem in note(sha256(root, "LICENSES/AGPL-3.0-or-later.txt") == agpl_hash, "AGPL text", "LICENSES/AGPL-3.0-or-later.txt is not the AGPL-3.0 text") {
+        result.append(problem)
+    }
+    for problem in note(sha256(root, "LICENSES/CC-BY-SA-4.0.txt") == cc_hash, "CC-BY-SA text", "LICENSES/CC-BY-SA-4.0.txt is not the CC-BY-SA-4.0 text") {
+        result.append(problem)
+    }
+    if with_gpl {
+        for problem in note(sha256(root, "LICENSES/GPL-2.0-or-later.txt") == gpl_hash, "GPL-2 text", "LICENSES/GPL-2.0-or-later.txt is not the GPL-2.0 text") {
+            result.append(problem)
+        }
+    }
+    let galaxy = read_text(root, "galaxy.yml")
+    for problem in note(galaxy.contains("AGPL-3.0-or-later"), "galaxy AGPL", "galaxy.yml does not declare AGPL-3.0-or-later") {
+        result.append(problem)
+    }
+    for problem in note(galaxy.contains("CC-BY-SA-4.0"), "galaxy CC-BY-SA", "galaxy.yml does not declare CC-BY-SA-4.0") {
+        result.append(problem)
+    }
+    let notice = read_text(root, "NOTICE")
+    for problem in note(notice.contains("AGPL-3.0-or-later"), "NOTICE AGPL", "NOTICE does not name AGPL-3.0-or-later") {
+        result.append(problem)
+    }
+    for problem in note(notice.contains("CC-BY-SA-4.0"), "NOTICE CC-BY-SA", "NOTICE does not name CC-BY-SA-4.0") {
+        result.append(problem)
+    }
+    if with_gpl {
+        for problem in note(galaxy.contains("GPL-2.0-or-later"), "galaxy GPL", "galaxy.yml does not declare GPL-2.0-or-later") {
+            result.append(problem)
+        }
+        for problem in note(notice.contains("GPL-2.0-or-later"), "NOTICE GPL", "NOTICE does not name GPL-2.0-or-later") {
+            result.append(problem)
+        }
+    }
+    return result
+}
+
+function check_archive(root: path) -> list<string> {
+    let version = read_text(root, "VERSION").trim_whitespace()
+    let mutable result: list<string> = []
+    match filesystem.make_temporary_directory("workstation-gate-") {
+        ok(directory) => {
+            let build = process.run(process.request("ansible-galaxy", ["collection", "build", "--output-path", directory.to_string()]).with_working_directory(root))
+            match build {
+                ok(completed) => {
+                    if completed.exit_code != 0 {
+                        for problem in note(false, "collection build", "exit {completed.exit_code}: {completed.standard_error.trim_whitespace()}") {
+                            result.append(problem)
+                        }
+                    } else {
+                        let archive = directory / "benmoussa-workstation-{version}.tar.gz"
+                        if not filesystem.path_exists(archive) {
+                            for problem in note(false, "collection archive", archive.to_string()) {
+                                result.append(problem)
+                            }
+                        } else {
+                            match process.run(process.request("tar", ["-tzf", archive.to_string()])) {
+                                ok(listing) => {
+                                    let entries = listing.standard_output.lines()
+                                    let required = [
+                                        "roles/",
+                                        "playbooks/",
+                                        "meta/runtime.yml",
+                                        "MANIFEST.json",
+                                        "FILES.json",
+                                        "README.md",
+                                        "CHANGELOG.md",
+                                        "LICENSE",
+                                        "NOTICE",
+                                        "REUSE.toml",
+                                        "LICENSES/"
+                                    ]
+                                    let mutable missing: list<string> = []
+                                    for entry in required {
+                                        if not any_starts(entries, entry) {
+                                            missing.append(entry)
+                                        }
+                                    }
+                                    let forbidden = [
+                                        "docs/",
+                                        "ci/",
+                                        "bench/",
+                                        "runs/",
+                                        ".github/",
+                                        "tools/",
+                                        ".opencode/",
+                                        "inventories/",
+                                        "AGENTS.md",
+                                        "CONTRIBUTING.md",
+                                        "SECURITY.md"
+                                    ]
+                                    let mutable present: list<string> = []
+                                    for entry in forbidden {
+                                        if any_starts(entries, entry) {
+                                            present.append(entry)
+                                        }
+                                    }
+                                    for problem in note(missing.length() == 0, "archive content", missing.join(", ")) {
+                                        result.append(problem)
+                                    }
+                                    for problem in note(present.length() == 0, "archive exclusion", present.join(", ")) {
+                                        result.append(problem)
+                                    }
+                                }
+                                error(failure) => {
+                                    for problem in note(false, "archive listing", failure.kind) {
+                                        result.append(problem)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                error(failure) => {
+                    for problem in note(false, "collection build", "cannot run ansible-galaxy: {failure.kind}") {
+                        result.append(problem)
+                    }
+                }
+            }
+            match filesystem.remove_directory_tree(directory) {
+                ok(_) => {}
+                error(failure) => {
+                    io.write_standard_error_line("gate: cannot remove {directory.to_string()}: {failure.kind}")
+                }
+            }
+        }
+        error(failure) => {
+            for problem in note(false, "temporary directory", failure.kind) {
+                result.append(problem)
+            }
+        }
+    }
+    return result
+}
+
+let mutable failures: list<string> = []
+for problem in check_paths(root) {
+    failures.append(problem)
+}
+for problem in check_required(root) {
+    failures.append(problem)
+}
+for problem in check_version(root) {
+    failures.append(problem)
+}
+for problem in check_identity(root) {
+    failures.append(problem)
+}
+for problem in check_licences(root, true) {
+    failures.append(problem)
+}
+for problem in git_search(root, ["grep", "--cached", "-IniE", "-e", secrets.joined(), "--", ".", ":(exclude)tools", ":(exclude)LICENSES"], "no secret shape") {
+    failures.append(problem)
+}
+for problem in execute(root, process.request("ansible-lint", ["playbooks", "roles"]), "ansible-lint") {
+    failures.append(problem)
+}
+for problem in execute(root, process.request("yamllint", ["-c", ".yamllint", "roles", "playbooks", "inventories"]), "yamllint") {
+    failures.append(problem)
+}
+for problem in execute(root, process.request("reuse", ["lint"]), "reuse lint") {
+    failures.append(problem)
+}
+for playbook in ["playbooks/site.yml"] {
+    for problem in execute(root, process.request("ansible-playbook", ["--syntax-check", playbook]), "syntax " + playbook) {
+        failures.append(problem)
+    }
+}
+for problem in check_archive(root) {
+    failures.append(problem)
+}
+
+if failures.length() == 0 {
+    io.write_standard_output_line(verdict.line(true))
+    process.exit_with_code(verdict.code(true))
+}
+io.write_standard_output_line(verdict.line(false))
+process.exit_with_code(verdict.code(false))

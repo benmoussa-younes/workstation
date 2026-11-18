@@ -1,0 +1,28 @@
+#!/bin/bash
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Signal a required reboot: the machine never reboots on
+# its own, but it must SAY when a reboot is pending -- a security kernel that is
+# installed and never booted is a fix that never applies. Writes
+# `/run/reboot-required` (the conventional flag) and logs the finding once per
+# new kernel through the journal.
+#
+# The product ships no mail path, so nothing is mailed: the record is in the
+# journal (`journalctl -t workstation-reboot`) and in `/run/reboot-required`, which
+# any session can read.
+set -euo pipefail
+
+running="$(uname -r)"
+newest="$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's#.*/vmlinuz-##' | sort -V | tail -1 || true)"
+[ -n "$newest" ] || exit 0
+
+if [ "$newest" != "$running" ]; then
+  printf 'A new kernel (%s) is installed; the running kernel is %s.\n' \
+    "$newest" "$running" > /run/reboot-required
+  if [ "$(cat /run/workstation-reboot-notified 2>/dev/null || true)" != "$newest" ]; then
+    logger -t workstation-reboot -p user.warning \
+      "reboot required on $(hostname): kernel ${newest} installed, ${running} running"
+    printf '%s\n' "$newest" > /run/workstation-reboot-notified
+  fi
+fi

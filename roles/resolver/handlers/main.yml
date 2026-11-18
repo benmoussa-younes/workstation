@@ -1,0 +1,8 @@
+---
+- name: Restart systemd-resolved
+  ansible.builtin.systemd_service:
+    name: systemd-resolved.service
+    state: restarted
+  # In check mode the package install is only SIMULATED, so the unit may not
+  # exist yet: naming it fails the dry run.
+  when: not ansible_check_mode

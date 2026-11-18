@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Workstation Edition
+Description=Workstation Edition boot theme
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/workstation
+ScriptFile=/usr/share/plymouth/themes/workstation/workstation.script

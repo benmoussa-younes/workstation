@@ -1,0 +1,50 @@
+---
+# The display manager: GDM, and nothing else.
+#
+# server names no display manager; a product that did would depend on
+# a server role it does not own. This role declares GDM once, for this product:
+#
+#   - GDM is what `gnome-core` pulls in, and it is the session chooser GNOME is
+#     tested with.
+#   - The `display-manager.service` alias is GDM's: `gdm.service` carries
+#     `[Install] Alias=display-manager.service`, and the package's maintainer
+#     script enables it. Writing that alias by hand -- as a symlink to a unit --
+#     is how a host ends up with two display managers taking turns, so this role
+#     never writes it and refuses a host where it points elsewhere.
+#   - Wayland is GDM's own default; its configuration says so explicitly, so a
+#     site cannot silently get an X11 session because a file elsewhere said
+#     `WaylandEnable=false`.
+#
+# GDM does NOT read every `*.conf` in `/etc/gdm3`: the installed daemon reads
+# `/etc/gdm3/daemon.conf` and generates `/run/gdm3/custom.conf` from it (the
+# Debian README says the same). A product drop-in in that directory is inert, so
+# this role writes the session key into `daemon.conf` itself and reads it back.
+# The greeter's dconf defaults are a separate file, `/etc/gdm3/greeter.dconf-defaults`.
+
+display_manager_package: gdm3
+# The unit GDM ships is `gdm.service`; `gdm3.service` is an alias of it, and
+# `systemd` reports the REAL unit's Id (`gdm.service`) with `UnitFileState=static`
+# for both. Measured on the bench, 2026-10-25: `systemctl show -p Id
+# display-manager.service` answers `Id=gdm.service`, `Names=gdm.service gdm3.service
+# display-manager.service`.
+display_manager_service: gdm.service
+display_manager_alias: display-manager.service
+display_manager_config_dir: /etc/gdm3
+display_manager_config: /etc/gdm3/daemon.conf
+display_manager_greeter_defaults: /etc/gdm3/greeter.dconf-defaults
+display_manager_autologin: false
+# The account GDM logs in on its own. Empty unless `display_manager_autologin`
+# is true: an autologin on a workstation is a decision, and a wrong login is a
+# session nobody can use.
+display_manager_autologin_user: ""
+
+# GDM's own assets. The `branding` role installs them; this role only names
+# their paths, because GDM is what reads them.
+display_manager_logo_dir: /etc/gdm3/assets
+display_manager_logo: /etc/gdm3/assets/logo.png
+
+# The greeter's own background. The default GNOME greeter is the grey "sideral"
+# plymouth/shell background; a workstation that names itself on the login screen
+# shows its own wallpaper (or, behind it, this dark colour).
+display_manager_wallpaper: /usr/share/backgrounds/workstation-wallpaper.png
+display_manager_background_color: "#15171a"

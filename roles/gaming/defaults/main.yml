@@ -1,0 +1,67 @@
+---
+# The opt-in gaming stack.
+#
+# The product installs Debian's Steam installer and the 32-bit graphics stack
+# the client needs. Steam itself is proprietary: there is no libre alternative
+# for the Steam catalogue, so the role is opt-in and the site accepts the
+# exception. No game, account or user preference is configured here.
+#
+# The role requires Debian `contrib` (steam-installer) and the i386
+# architecture (steam-libs-i386 and the mesa/vulkan stack). It fails with a
+# message naming both when the site's package sources do not serve them; it
+# never adds a vendor repository and never falls back to the WAN silently.
+gaming_enabled: false
+
+gaming_foreign_architecture: i386
+gaming_steam_package: steam-installer
+
+# The Debian sources file the role adds `contrib` to when the stack is enabled.
+# `contrib` is a component of the site's own archive (it carries
+# `steam-installer`), so the role declares it instead of refusing the host. Only
+# the current suite and its `-updates` line are rewritten: they are what serves
+# the installer, and a site's `-security` line stays its own.
+gaming_debian_suite: "{{ identity_debian_release_name | default('') }}"
+gaming_debian_sources_file: /etc/apt/sources.list
+
+# Steam's pressure-vessel sandbox needs unprivileged user namespaces. The
+# `hardening` role disables them with `60-hardening.conf`; this drop-in loads
+# after it and re-enables them on an opt-in gaming host. It is the one security
+# trade-off the gaming role makes, and it is scoped to `gaming_enabled: true`.
+gaming_userns_sysctl: /etc/sysctl.d/61-gaming-userns.conf
+
+# The amd64 tools. `steam-devices` carries the controller udev rules;
+# `gamemode` and `mangohud` are the session helpers; the last three are the
+# diagnostics the verification page uses.
+gaming_packages:
+  - steam-devices
+  - gamemode
+  - mangohud
+  - vulkan-tools
+  - mesa-utils
+  - vainfo
+
+# The 32-bit stack Steam links against. Most of these are dependencies of
+# `steam-libs-i386`, but the role declares them explicitly so the read-back
+# proves the graphics path and a missing i386 candidate fails here, not inside
+# Steam.
+gaming_i386_packages:
+  - mesa-vulkan-drivers:i386
+  - libgl1-mesa-dri:i386
+  - libglx-mesa0:i386
+  - libegl-mesa0:i386
+  - libgbm1:i386
+  - libvulkan1:i386
+  - libdrm-amdgpu1:i386
+  - libdrm-intel1:i386
+  - libva2:i386
+  - libva-drm2:i386
+  - libva-x11-2:i386
+
+# `desktop` owns the groups; this role refuses a host where they are absent
+# instead of adding them a second time.
+gaming_required_groups:
+  - video
+  - render
+  - input
+
+gaming_package_cache_valid_time: 3600

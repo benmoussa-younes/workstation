@@ -1,0 +1,56 @@
+---
+# PipeWire and the media codecs, declared.
+#
+# `gnome-core` already pulls `pipewire-audio`; this role states the whole stack
+# anyway, so the product has ONE place that names its audio server and a host
+# where a site removed a piece is repaired rather than left half-installed.
+# The GStreamer codecs are here because GNOME Videos/Showtime and the other
+# GStreamer applications need them for H.264/HEVC, MP3/AAC and the containers
+# Debian's `gnome-core` does not pull by default.
+audio_packages:
+  - pipewire                      # the server
+  - pipewire-audio                # the ALSA/PulseAudio integration: without it
+                                 # every application falls back to plain ALSA
+  - pipewire-pulse                # the PulseAudio socket the applications use
+  - wireplumber                   # the session manager (policy, device routing)
+  - libspa-0.2-bluetooth          # the SPA plugin for A2DP/HFP; without it a
+                                 # paired headset has no audio profile
+  - alsa-ucm-conf                 # the UCM profiles for the ALSA cards
+  - gstreamer1.0-plugins-bad      # H.265/AV1 and the newer decoders
+  - gstreamer1.0-plugins-ugly     # MP3 and the codecs Debian keeps in ugly
+  - gstreamer1.0-libav            # the FFmpeg-backed decoders
+  - gstreamer1.0-vaapi            # hardware decode on the Intel GPU
+  - gstreamer1.0-tools            # gst-inspect, the read-back of the decoders
+
+# The session services this stack runs, as USER units. Declared here because they
+# are the proof an operator runs AFTER login -- the README names the
+# commands -- and because the role asserts that the packaged units ship.
+audio_user_services:
+  - pipewire
+  - pipewire-pulse
+  - wireplumber
+
+# The sound server PipeWire replaces. Both own the same PulseAudio socket, so a
+# host that keeps both has a session with no sound at all.
+audio_conflict_packages:
+  - pulseaudio
+
+# Where the packages put their session units and their configuration. Read, never
+# written: PipeWire's configuration belongs to the package on this product.
+audio_unit_dir: /usr/lib/systemd/user
+audio_config_dir: /usr/share/pipewire
+
+# `alsa-utils` 1.2.14-1 ships `/usr/lib/udev/rules.d/90-alsa-restore.rules` with
+# `LABEL="alsa_restore_go"` where the rule's `GOTO` names `alsa_restore_std`
+# (Debian #1093057). The workaround writes a corrected copy in
+# `/etc/udev/rules.d`, which udev reads first, so the restore path works and the
+# two boot warnings stop. The package file is never edited; the override retires
+# itself once the distribution ships the fix.
+#
+# OPT-IN, default false: this is not a requirement of the audio stack. Only the
+# machine that actually shows the two udev warnings enables it, in its site
+# `host_vars` (`audio_fix_alsa_restore: true`). A host without `alsa-utils`, or
+# a distribution that fixed the rule, is not a failure.
+audio_fix_alsa_restore: false
+audio_alsa_restore_source: /usr/lib/udev/rules.d/90-alsa-restore.rules
+audio_alsa_restore_override: /etc/udev/rules.d/90-alsa-restore.rules

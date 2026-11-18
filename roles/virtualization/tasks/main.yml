@@ -1,0 +1,545 @@
+---
+- name: The firewall role is in the play
+  # The guests need the firewall rules the `security` role declares (DHCP/DNS
+  # on the bridge, forward and NAT). This role starts libvirt; it does not own
+  # nftables. A site that runs virtualization alone would get a bridge with no
+  # policy, so it fails here instead.
+  ansible.builtin.assert:
+    that:
+      # The playbook names its roles by their bare name; a play that imports
+      # this collection's roles may carry the fully qualified one. Compare the
+      # last segment, so both spellings count.
+      - "'security' in (ansible_play_role_names | map('regex_replace', '^.*\\.', '') | list)"
+    fail_msg: >-
+      The virtualization role needs the security role in the same play: its
+      guests use the DHCP, DNS, forward and NAT rules that security declares
+      for `virbr*`. Add `security` to the play. The play's roles are
+      {{ ansible_play_role_names }}.
+  when: virtualization_enabled | bool
+
+# The local virtualization stack. No virtual machine and no container is created.
+- name: The local virtualization stack is configured
+  when: virtualization_enabled | bool
+  environment:
+    # `virsh net-info` and `virsh pool-info` are translated, and every state
+    # this role reads is an English literal (`Active: no`, `State: inactive`,
+    # `Autostart: yes`). The commands therefore run in the C locale: on a French
+    # host (measured on the laptop, 2026-11-18) `Actif : non` matched nothing,
+    # so the network and the pool were defined and never started, and the
+    # read-back failed.
+    LC_ALL: C
+  block:
+    - name: The owning account is declared
+      ansible.builtin.assert:
+        that:
+          - virtualization_user | length > 0
+          - virtualization_user != 'root'
+        fail_msg: >-
+          virtualization_user must name an existing non-root account.
+
+    - name: The owning account is read
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ virtualization_user }}"
+
+    - name: The owning account exists
+      ansible.builtin.assert:
+        that:
+          - virtualization_user in ansible_facts.getent_passwd
+        fail_msg: "{{ virtualization_user }} does not exist on this host."
+
+    - name: The owning account's UID is known
+      ansible.builtin.set_fact:
+        virtualization_uid: "{{ ansible_facts.getent_passwd[virtualization_user][1] }}"
+
+    - name: The KVM device is read
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: virtualization_kvm
+
+    - name: A host without KVM is reported
+      ansible.builtin.debug:
+        msg: >-
+          /dev/kvm is absent: virt-manager will use TCG, or the host needs SVM
+          (AMD-V) enabled in the BIOS and the kvm_amd/kvm_intel module loaded.
+          If the setting disappears when the machine is unplugged, check the
+          CMOS battery and the BIOS persistence; then run `sudo modprobe kvm_amd`
+          and read `dmesg`. The role still installs and configures libvirt.
+      when: not virtualization_kvm.stat.exists
+
+    - name: The libvirt and virt-manager packages are present
+      ansible.builtin.apt:
+        name: "{{ virtualization_packages }}"
+        state: present
+        cache_valid_time: 3600
+
+    - name: The local virtualization groups exist
+      ansible.builtin.group:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ virtualization_groups }}"
+
+    - name: The account joins the local virtualization groups
+      ansible.builtin.user:
+        name: "{{ virtualization_user }}"
+        groups: "{{ virtualization_groups }}"
+        append: true
+      when: not ansible_check_mode
+
+    - name: The libvirt service is enabled and running
+      ansible.builtin.systemd_service:
+        name: "{{ virtualization_libvirt_service }}"
+        enabled: true
+        state: started
+      when: not ansible_check_mode
+
+    - name: The default network state is read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - net-info
+          - "{{ virtualization_default_network }}"
+      register: virtualization_network_info
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: The default network is defined
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - net-define
+          - "{{ virtualization_default_network_definition }}"
+      when: virtualization_network_info.rc != 0
+      changed_when: true
+
+    - name: The default network state is read after definition
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - net-info
+          - "{{ virtualization_default_network }}"
+      register: virtualization_network_state
+      changed_when: false
+      failed_when: false
+
+    - name: The default network is started
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - net-start
+          - "{{ virtualization_default_network }}"
+      when: virtualization_network_state.stdout is search('Active:\\s+no')
+      changed_when: true
+
+    - name: The default network starts with the host
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - net-autostart
+          - "{{ virtualization_default_network }}"
+      when: virtualization_network_state.stdout is search('Autostart:\\s+no')
+      changed_when: true
+
+    - name: The default storage pool directory exists
+      ansible.builtin.file:
+        path: "{{ virtualization_storage_pool_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0711"
+
+    - name: The default storage pool state is read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - pool-info
+          - "{{ virtualization_storage_pool }}"
+      register: virtualization_pool_info
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: The default storage pool is defined
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - pool-define-as
+          - "{{ virtualization_storage_pool }}"
+          - dir
+          - --target
+          - "{{ virtualization_storage_pool_path }}"
+      when: virtualization_pool_info.rc != 0
+      changed_when: true
+
+    - name: The default storage pool state is read after definition
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - pool-info
+          - "{{ virtualization_storage_pool }}"
+      register: virtualization_pool_state
+      changed_when: false
+      failed_when: false
+
+    - name: The default storage pool is started
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - pool-start
+          - "{{ virtualization_storage_pool }}"
+      when: virtualization_pool_state.stdout is search('State:\\s+inactive')
+      changed_when: true
+
+    - name: The default storage pool starts with the host
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - pool-autostart
+          - "{{ virtualization_storage_pool }}"
+      when: virtualization_pool_state.stdout is search('Autostart:\\s+no')
+      changed_when: true
+
+    - name: The host's virtualization capabilities are checked
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virt-host-validate
+          - qemu
+      register: virtualization_host_validate
+      changed_when: false
+      failed_when: false
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    - name: A host with virtualization warnings is reported
+      ansible.builtin.debug:
+        msg: "{{ virtualization_host_validate.stdout_lines | default([]) }}"
+      when:
+        - not ansible_check_mode
+        - virtualization_verify | bool
+        - virtualization_host_validate.rc != 0
+
+    - name: The libvirt node is read back
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - nodeinfo
+      register: virtualization_nodeinfo
+      changed_when: false
+      failed_when: false
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    - name: The libvirt node answers
+      ansible.builtin.assert:
+        that:
+          - virtualization_nodeinfo.rc == 0
+        fail_msg: "virsh nodeinfo failed; the local libvirt socket is not usable."
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    - name: The default network is active and autostarted
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - net-info
+          - "{{ virtualization_default_network }}"
+      register: virtualization_network_final
+      changed_when: false
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    - name: The default network is active and autostarted
+      ansible.builtin.assert:
+        that:
+          - virtualization_network_final.stdout is search('Active:\\s+yes')
+          - virtualization_network_final.stdout is search('Autostart:\\s+yes')
+        fail_msg: >-
+          The default libvirt network is not active and autostarted:
+          `{{ virtualization_network_final.stdout | default('') | trim }}`.
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    - name: The default storage pool is running and autostarted
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        argv:
+          - virsh
+          - pool-info
+          - "{{ virtualization_storage_pool }}"
+      register: virtualization_pool_final
+      changed_when: false
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    - name: The default storage pool is running and autostarted
+      ansible.builtin.assert:
+        that:
+          - virtualization_pool_final.stdout is search('State:\\s+running')
+          - virtualization_pool_final.stdout is search('Autostart:\\s+yes')
+        fail_msg: >-
+          The default libvirt storage pool is not running and autostarted:
+          `{{ virtualization_pool_final.stdout | default('') | trim }}`.
+      when: virtualization_verify | bool and not ansible_check_mode
+
+    # Rootless Podman is a separate, optional part of the same bundle.
+    - name: The rootless Podman engine is configured
+      when: virtualization_podman_enabled | bool
+      tags: [podman]
+      block:
+        - name: The Podman account is declared
+          ansible.builtin.assert:
+            that:
+              - virtualization_podman_user | length > 0
+              - virtualization_podman_user != 'root'
+            fail_msg: >-
+              virtualization_podman_user must name an existing non-root
+              account.
+
+        - name: The Podman account is read
+          ansible.builtin.getent:
+            database: passwd
+            key: "{{ virtualization_podman_user }}"
+
+        - name: The Podman account exists
+          ansible.builtin.assert:
+            that:
+              - virtualization_podman_user in ansible_facts.getent_passwd
+            fail_msg: "{{ virtualization_podman_user }} does not exist on this host."
+
+        - name: The Podman account's UID and home are known
+          ansible.builtin.set_fact:
+            virtualization_podman_uid: "{{ ansible_facts.getent_passwd[virtualization_podman_user][1] }}"
+            virtualization_podman_home: "{{ ansible_facts.getent_passwd[virtualization_podman_user][4] }}"
+
+        - name: The Podman packages are present
+          ansible.builtin.apt:
+            name: "{{ virtualization_podman_packages }}"
+            state: present
+            cache_valid_time: 3600
+
+        - name: The container configuration directories exist
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+          loop:
+            - "{{ virtualization_podman_registries_dir }}"
+            - "{{ virtualization_podman_containers_dir }}"
+
+        - name: The registry search path is declared
+          ansible.builtin.template:
+            src: registries.conf.j2
+            dest: "{{ virtualization_podman_registries_file }}"
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Restart the rootless Podman socket
+
+        - name: The rootless engine settings are declared
+          ansible.builtin.template:
+            src: containers.conf.j2
+            dest: "{{ virtualization_podman_containers_file }}"
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Restart the rootless Podman socket
+
+        - name: The subordinate UID range is read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - getent
+              - subuid
+              - "{{ virtualization_podman_user }}"
+          register: virtualization_podman_subuid
+          changed_when: false
+          failed_when: false
+
+        - name: The subordinate GID range is read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - getent
+              - subgid
+              - "{{ virtualization_podman_user }}"
+          register: virtualization_podman_subgid
+          changed_when: false
+          failed_when: false
+
+        - name: The subordinate ID ranges are coherent
+          ansible.builtin.assert:
+            that:
+              - >-
+                (virtualization_podman_subuid.stdout | length > 0)
+                == (virtualization_podman_subgid.stdout | length > 0)
+            fail_msg: >-
+              {{ virtualization_podman_user }} has only one of /etc/subuid and
+              /etc/subgid. Repair the account's subordinate ID ranges first.
+
+        - name: The subordinate ID ranges are declared
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - usermod
+              - --add-subuids
+              - "{{ virtualization_podman_subuid_start }}-{{ virtualization_podman_subuid_end }}"
+              - --add-subgids
+              - "{{ virtualization_podman_subuid_start }}-{{ virtualization_podman_subuid_end }}"
+              - "{{ virtualization_podman_user }}"
+          when: virtualization_podman_subuid.stdout | length == 0
+          changed_when: true
+
+        - name: The user manager may run without a login
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - loginctl
+              - enable-linger
+              - "{{ virtualization_podman_user }}"
+            creates: "/var/lib/systemd/linger/{{ virtualization_podman_user }}"
+          when: virtualization_podman_linger | bool and not ansible_check_mode
+
+        - name: The user socket has a running user manager
+          ansible.builtin.assert:
+            that:
+              - not (virtualization_podman_socket_enabled | bool) or (virtualization_podman_linger | bool)
+            fail_msg: >-
+              virtualization_podman_socket_enabled requires
+              virtualization_podman_linger.
+
+        - name: The user namespace setting rootless Podman needs is declared
+          ansible.builtin.copy:
+            content: |
+              # Managed by Ansible; do not edit.
+              # SPDX-License-Identifier: AGPL-3.0-or-later
+              #
+              # Rootless Podman clones an unprivileged user namespace for every
+              # container. 60-hardening.conf disables them; this file loads
+              # after it and re-enables them on a host that declares the engine.
+              kernel.unprivileged_userns_clone = 1
+            dest: "{{ virtualization_podman_userns_sysctl }}"
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Reload sysctl
+
+        - name: The sysctl handler runs before the engine is read back
+          ansible.builtin.meta: flush_handlers
+
+        - name: The unprivileged user namespace setting is read
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            cmd: /usr/sbin/sysctl -n kernel.unprivileged_userns_clone
+          register: virtualization_userns_value
+          changed_when: false
+
+        - name: Unprivileged user namespaces are enabled for the engine
+          ansible.builtin.assert:
+            that:
+              - virtualization_userns_value.stdout | trim == '1'
+            fail_msg: >-
+              {{ inventory_hostname }}: kernel.unprivileged_userns_clone is
+              {{ virtualization_userns_value.stdout | trim }}, not 1, so
+              rootless Podman cannot clone its namespace. Check
+              {{ virtualization_podman_userns_sysctl }} and run
+              `/usr/sbin/sysctl --system`.
+
+        - name: The rootless Podman socket is enabled
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - systemctl
+              - --user
+              - enable
+              - --now
+              - podman.socket
+          become: true
+          become_user: "{{ virtualization_podman_user }}"
+          environment:
+            HOME: "{{ virtualization_podman_home }}"
+            USER: "{{ virtualization_podman_user }}"
+            LOGNAME: "{{ virtualization_podman_user }}"
+            XDG_RUNTIME_DIR: "/run/user/{{ virtualization_podman_uid }}"
+            DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ virtualization_podman_uid }}/bus"
+          register: virtualization_podman_socket_enable
+          changed_when: >-
+            'Created symlink' in virtualization_podman_socket_enable.stdout
+            or 'Created symlink' in virtualization_podman_socket_enable.stderr
+          retries: 5
+          delay: 2
+          until: virtualization_podman_socket_enable.rc == 0
+          when: virtualization_podman_socket_enabled | bool and not ansible_check_mode
+
+        - name: The rootless engine is read back
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - podman
+              - info
+              - --format
+              - json
+          become: true
+          become_user: "{{ virtualization_podman_user }}"
+          environment:
+            HOME: "{{ virtualization_podman_home }}"
+            USER: "{{ virtualization_podman_user }}"
+            LOGNAME: "{{ virtualization_podman_user }}"
+            XDG_RUNTIME_DIR: "/run/user/{{ virtualization_podman_uid }}"
+            DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ virtualization_podman_uid }}/bus"
+          register: virtualization_podman_info
+          changed_when: false
+          when: virtualization_podman_verify | bool and not ansible_check_mode
+
+        - name: The Podman engine is rootless
+          ansible.builtin.assert:
+            that:
+              - (virtualization_podman_info.stdout | from_json).host.security.rootless | bool
+            fail_msg: >-
+              podman info does not report a rootless engine for
+              {{ virtualization_podman_user }}.
+          when: virtualization_podman_verify | bool and not ansible_check_mode
+
+        - name: The rootless socket is active
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - systemctl
+              - --user
+              - is-active
+              - podman.socket
+          become: true
+          become_user: "{{ virtualization_podman_user }}"
+          environment:
+            HOME: "{{ virtualization_podman_home }}"
+            USER: "{{ virtualization_podman_user }}"
+            LOGNAME: "{{ virtualization_podman_user }}"
+            XDG_RUNTIME_DIR: "/run/user/{{ virtualization_podman_uid }}"
+            DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ virtualization_podman_uid }}/bus"
+          register: virtualization_podman_socket_state
+          changed_when: false
+          failed_when: false
+          when: virtualization_podman_socket_enabled | bool and not ansible_check_mode
+
+        - name: The rootless socket is running
+          ansible.builtin.assert:
+            that:
+              - virtualization_podman_socket_state.stdout | trim == 'active'
+            fail_msg: "podman.socket is not active for {{ virtualization_podman_user }}."
+          when: virtualization_podman_socket_enabled | bool and not ansible_check_mode
+
+        - name: The user manager lingers
+          ansible.builtin.command:  # noqa: command-instead-of-module
+            argv:
+              - loginctl
+              - show-user
+              - "{{ virtualization_podman_user }}"
+              - -p
+              - Linger
+          register: virtualization_podman_linger_state
+          changed_when: false
+          when: virtualization_podman_linger | bool and not ansible_check_mode
+
+        - name: The user manager is allowed to linger
+          ansible.builtin.assert:
+            that:
+              - virtualization_podman_linger_state.stdout | trim == 'Linger=yes'
+            fail_msg: "Linger is not enabled for {{ virtualization_podman_user }}."
+          when: virtualization_podman_linger | bool and not ansible_check_mode
+
+# The drop-in is the only trace of the engine in the kernel's configuration. A
+# site that stops declaring the engine gets the hardened setting back rather
+# than a file that re-enables user namespaces for nothing.
+- name: The engine's user namespace drop-in is removed when the engine is not declared
+  ansible.builtin.file:
+    path: "{{ virtualization_podman_userns_sysctl }}"
+    state: absent
+  when: not (virtualization_enabled | bool and virtualization_podman_enabled | bool)
+  notify: Reload sysctl

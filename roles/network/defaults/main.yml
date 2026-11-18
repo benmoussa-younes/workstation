@@ -1,0 +1,165 @@
+---
+# The link belongs to NetworkManager on this product.
+#
+# server owns the link with systemd-networkd and refuses a host that
+# runs NetworkManager. A desktop is the mirror image: the NetworkManager applet,
+# the VPN entries and the Wi-Fi panel the GNOME shell shows are NetworkManager's,
+# and a second stack beside it is two owners of one link.
+#
+# THE HAND-OVER, and why it is careful. A converged server host has
+# systemd-networkd carrying its only interface. This role installs and configures
+# NetworkManager, takes the interface over from a DETACHED oneshot, and validates
+# it there -- with `nmcli` (connectivity-check off: no request leaves the host),
+# never with `ping` or a resolve that the change itself could break. The server
+# lost its test machine three times by moving the link inline; that is the rule
+# applied here.
+#
+# The address does NOT change hands as a guess: the profile NetworkManager adopts
+# is written from the address the host has when the role runs, and the hand-over
+# stops the previous owner only after NetworkManager reports the device managed.
+# A host whose link NetworkManager does not adopt is left as it was.
+
+network_manager_conf_dir: /etc/NetworkManager/conf.d
+network_manager_dns_conf: /etc/NetworkManager/conf.d/90-workstation-dns.conf
+network_manager_main_conf: /etc/NetworkManager/conf.d/05-workstation-main.conf
+network_manager_dns: systemd-resolved
+
+# The radio's power saving, as the default every profile that does not override
+# it inherits. `2` disables it: measured on the desktop site (2026-11-11), the
+# mean round trip fell from 56.99 ms to 2.35 ms and the deviation from 29.50 ms
+# to 0.50 ms. A sleeping radio is latency a desktop does not want. `0` leaves
+# the driver's default, `1` does not touch it, `3` forces it on.
+network_wifi_powersave: 2
+
+# The interfaces NetworkManager must not touch. `lo` is unmanaged by Debian's own
+# configuration; listing it makes the list the whole declaration. A device named
+# here is NOT given a second stack: it stays the site's, and the kernel keeps it.
+network_unmanaged_devices:
+  - lo
+
+# The interface the hand-over adopts: the one that carries the default route.
+network_handover_devices:
+  - "{{ ansible_facts['default_ipv4']['interface'] | default('ens3') }}"
+
+# How the link is put under NetworkManager.
+#
+#   auto   detect the current owner: ifupdown -> boot, systemd-networkd -> live,
+#          NetworkManager already connected -> verify.
+#   boot   write the Wi-Fi profile, retire ifupdown for the NEXT boot and enable
+#          NetworkManager. The running ifupdown keeps the link: nothing is cut,
+#          the converge continues, and the reboot makes NetworkManager the owner.
+#          This is the path for a fresh Debian machine, whose installer writes
+#          ifupdown.
+#   live   the detached hand-over from systemd-networkd, or a site-managed live
+#          profile when network_profile_managed is false.
+#   verify touch nothing; read the link back.
+network_apply: auto
+
+# The installer's file and the one-time copy of it. The copy keeps the Wi-Fi key
+# (root, 0600); the active file becomes loopback so the next boot has one owner.
+network_ifupdown_file: /etc/network/interfaces
+network_ifupdown_backup: /etc/network/interfaces.workstation-bak
+network_wpa_supplicant_file: "/etc/wpa_supplicant/wpa_supplicant-{{ network_handover_devices[0] }}.conf"
+
+# The PSK a keyfile carries is the derived key, never the passphrase: the 64-hex
+# value `wpa_passphrase` computes (PBKDF2-SHA1, 4096 rounds, 32 bytes). The
+# helper also retires a plaintext key an installer or an older run left in
+# `/etc/network/interfaces`, its backup, the supplicant file or a
+# NetworkManager keyfile: a file under `/etc` then carries the key the radio
+# uses, and the Wi-Fi password the site uses elsewhere is not recoverable from
+# it.
+# The helper is copied to the target and run there: `command` executes on the
+# managed host, so a script path under `role_path` would name a file the host
+# does not have.
+network_wpa_psk_helper: /usr/local/sbin/wpa-psk-hash.py
+network_wpa_psk_search_paths:
+  - /etc/NetworkManager/system-connections
+  - /etc/network
+  - /etc/wpa_supplicant
+network_wpa_psk_search_patterns:
+  - '*.nmconnection'
+  - 'interfaces'
+  - 'interfaces.workstation-bak'
+  - '*.conf'
+
+# The NetworkManager Wi-Fi profile written in `boot` mode. It is loaded at the
+# next NetworkManager start, not during the converge.
+network_boot_profile: /etc/NetworkManager/system-connections/workstation-wifi.nmconnection
+network_boot_connection_name: workstation-wifi
+network_boot_profile_uuid: 5f0c8f9e-6f4b-4b7e-9d0c-0b3f9e9b2b42
+network_boot_powersave: 2
+
+# The address the `boot` mode keyfile declares. Empty carries the address the
+# running link already has: the converge session keeps it, and the site sets the
+# address on ifupdown before the first run. A site that declares it writes a
+# CIDR (`192.0.2.10/24`) and MUST declare the gateway with it: the product will
+# not invent a default route. Declaring an address different from the running one
+# means the next boot changes the host's address -- update `ansible_host` before
+# the reboot.
+network_boot_address: ""
+network_boot_gateway: ""
+
+# The DNS servers the `boot` mode keyfile carries. `method=manual` takes no DHCP
+# lease, so the link learns no resolver from it. Empty is accepted only when
+# `resolver_fallback_dns` is declared: the role asserts one of the two before it
+# lets the machine reboot without a resolver, which is the failure measured on
+# the first production site (2026-10-27): an empty `/etc/resolv.conf` and the
+# first `apt` task failing on `Temporary failure resolving 'deb.debian.org'`.
+network_boot_dns: []
+
+# The site may declare the radio explicitly (a vault value). Empty means "read
+# the installer's ifupdown file"; that file is the machine's own secret store and
+# is read with no_log.
+network_wifi_ssid: ""
+network_wifi_psk: ""
+
+# Whether `network_wifi_psk` already IS the 64-hex key (a `wpa_passphrase`
+# output a site pasted) instead of the passphrase. False by default: the product
+# derives the key from the passphrase, because a passphrase that happens to look
+# like 64 hex characters is still a passphrase -- measured on the laptop
+# (2026-11-18): the real Wi-Fi password looked encrypted, the role took it for a
+# key, wrote it verbatim, and the access point refused the association.
+network_wifi_psk_is_derived: false
+
+# Whether the `live` mode writes the adopted profile and performs the hand-over.
+# `boot` and `verify` ignore it.
+network_profile_managed: true
+
+network_handover_script: /usr/local/sbin/workstation-network-handover
+network_handover_unit: /etc/systemd/system/workstation-network-handover.service
+network_handover_profile: /etc/NetworkManager/system-connections/workstation-adopted.nmconnection
+network_handover_profile_uuid: 5f0c8f9e-6f4b-4b7e-9d0c-0b3f9e9b2b41
+network_handover_profile_name: workstation-adopted
+# Higher than any profile another tool writes for the same device (NetworkManager
+# defaults to 0): the adopted profile is the one the hand-over activates, and a
+# profile that loses the activation race is a link that never came back --
+# measured on the bench, 2026-10-25.
+network_handover_profile_priority: 100
+
+# The other owner of the link, when the image describes it with `netplan`.
+# Debian's cloud images do: cloud-init writes `/etc/netplan/50-cloud-init.yaml`,
+# and its generator produces a `DHCP=yes` `.network` file that NetworkManager can
+# neither read nor ignore -- measured on the bench, 2026-10-25. The hand-over
+# retires that file (renamed, never deleted) on the interfaces it adopts, so the
+# declaration and the actual owner agree.
+network_netplan_dir: /etc/netplan
+network_netplan_retired_suffix: ".retired-workstation-network"
+
+# `debian` is Debian's connectivity check -- a request to
+# `http://network-test.debian.org/nm`, which this product forbids from the
+# desktop stack. `none` disables it, which is also what lets the hand-over
+# validate with `nmcli` instead of a reachability probe.
+network_connectivity_check: none
+
+# The Wi-Fi radio's regulatory domain. Empty keeps the driver's world domain.
+network_regulatory_domain: ""
+
+network_packages:
+  - network-manager
+  - wpasupplicant
+  - wireless-regdb
+  - iw
+
+# How long NetworkManager has to adopt the interface before the hand-over gives
+# up and leaves the previous owner in place.
+network_handover_timeout: 60

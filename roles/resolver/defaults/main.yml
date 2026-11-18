@@ -1,0 +1,41 @@
+---
+# The host's stub resolver, owned by systemd-resolved.
+#
+# systemd-resolved is a caching, validating stub for LOCAL applications; it is
+# not a DNS service for the network. The role configures the host's stub only,
+# and takes the upstream servers from the `network` role's per-link `DNS=`.
+
+# The drop-in that declares the resolver's behaviour.
+resolver_conf_dir: /etc/systemd/resolved.conf.d
+resolver_conf_file: 10-workstation.conf
+resolver_dropin: "{{ resolver_conf_dir }}/{{ resolver_conf_file }}"
+
+# Extra global servers. Empty keeps every query on the link's servers: a public
+# fallback would leak the host's names to a third party.
+resolver_fallback_dns: []
+
+# Encryption and validation. `allow-downgrade` validates where the upstream can
+# and never fails a lookup on a network that cannot, which is the right default
+# for a machine that does not control its resolver.
+#
+# The two are not independent: `resolved.conf(5)` pairs `DNSOverTLS=yes` with
+# `DNSSEC=yes`, because encrypted transport that is not validated hides a
+# downgrade. `allow-downgrade` is accepted here -- the upstream validates, and
+# local strictness makes one badly signed name unreachable -- and the role
+# reports it rather than refusing it.
+resolver_dns_over_tls: false
+resolver_dnssec: allow-downgrade
+
+# Link-local multicast name resolution. LLMNR (5355) and mDNS (5353) answer
+# anything on the link and are pure attack surface on a host that resolves
+# through a declared server. Found by audit: resolved listened on 0.0.0.0:5355 on
+# every host. Both are declared OFF.
+resolver_llmnr: false
+resolver_multicast_dns: false
+
+# Whether the stub owns `/etc/resolv.conf` through the symlink. The installer's
+# file is kept once beside it, for an exact rollback.
+resolver_manage_resolv_conf: true
+resolver_resolv_conf: /etc/resolv.conf
+resolver_resolv_conf_backup: /etc/resolv.conf.workstation-bak
+resolver_stub_resolv_conf: /run/systemd/resolve/stub-resolv.conf

@@ -1,0 +1,98 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Loaded by the nftables.service drop-in AFTER the distribution's
+# /etc/nftables.conf, which this product never writes. Replace only our own
+# table, atomically: a `flush ruleset` here would wipe Docker's chains whenever
+# this file is loaded — the very conflict this design exists to avoid.
+table inet {{ security_firewall_table }} {}
+delete table inet {{ security_firewall_table }}
+
+table inet {{ security_firewall_table }} {
+    # `policy drop` is what closes this chain: a packet that matches no rule is
+    # dropped, measured on a machine running nftables 1.1.3 where a base chain
+    # at `priority -10` holding only that policy refused every undeclared port.
+    #
+    # The last rule says the same thing in the chain body. It is not what makes
+    # the chain closed -- the policy does -- and writing it that way would be a
+    # second, weaker declaration of one decision. It is there so the drop is
+    # COUNTED: `nft list ruleset` then shows how many packets the ruleset
+    # turned away, which the policy alone never reports.
+    chain input {
+        type filter hook input priority -10; policy drop;
+
+        # Anything we started, and the loopback interface.
+        ct state established,related accept
+        iif lo accept
+
+        # ICMP and ICMPv6: a host that cannot answer is worse than one that can,
+        # and IPv6 neighbour discovery does not work without ICMPv6.
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+
+        # DHCP and DHCPv6 clients.
+        udp dport 68 accept
+        udp dport 546 accept
+
+        # SSH, from the declared sources when any are named.
+        tcp dport {{ security_ssh_port }}{% if security_ssh_sources %} ip saddr { {{ security_ssh_sources | join(', ') }} }{% endif %} accept
+{% for service in security_extra_services %}
+        {{ service.proto | default('tcp') }} dport {{ service.port }}{% if service.sources is defined and service.sources %} ip saddr { {{ service.sources | join(', ') }} }{% endif %} accept
+{% endfor %}
+{% for proto_rule in security_extra_protocols %}
+        ip protocol {{ proto_rule.protocol }}{% if proto_rule.sources is defined and proto_rule.sources %} ip saddr { {{ proto_rule.sources | join(', ') }} }{% endif %} accept
+{% endfor %}
+{% if virtualization_enabled | default(false) %}
+        # libvirt guests: DHCP and DNS to the host's dnsmasq.
+        iifname "virbr*" udp dport 67 accept
+        iifname "virbr*" udp dport 53 accept
+        iifname "virbr*" tcp dport 53 accept
+{% endif %}
+        # The counter the policy cannot give (see the comment above the chain).
+        counter drop
+    }
+
+    # The FORWARD hook, which the host OWNS. Its policy is declared: `drop`
+    # unless the site says otherwise. A host that runs Docker must choose
+    # `accept`, because Docker publishes through its own NAT rules and a DROP
+    # policy here silently kills every published container port.
+    #
+    # As with `input`, the policy closes the chain; the terminal rule below is
+    # there so the drop is counted.
+    chain forward {
+        type filter hook forward priority -10; policy {{ security_forward_policy }};
+
+        ct state established,related accept
+
+        # PMTU discovery arrives as a FORWARDED packet: dropping it silently is
+        # how large TCP flows hang instead of failing at once.
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+{% for flow in security_forward_flows %}
+        iif {{ flow.iif }} oif {{ flow.oif }}{% if flow.sources is defined and flow.sources %} ip saddr { {{ flow.sources | join(', ') }} }{% endif %} accept
+{% endfor %}
+{% if virtualization_enabled | default(false) %}
+        # libvirt guests: the bridge's own traffic and its return path.
+        iifname "virbr*" accept
+        oifname "virbr*" accept
+{% endif %}
+{% if security_forward_policy == 'drop' %}
+        counter drop
+{% endif %}
+    }
+}
+
+{% if virtualization_enabled | default(false) %}
+# libvirt's NAT is installed by libvirt when its network starts. This role owns
+# nftables and reloads it after `virtualization`; declare the masquerade here so
+# the reload does not strip the guests' route to the world.
+table ip libvirt_nat {}
+delete table ip libvirt_nat
+table ip libvirt_nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        iifname "virbr*" masquerade
+    }
+}
+{% endif %}

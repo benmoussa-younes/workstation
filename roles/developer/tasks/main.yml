@@ -1,0 +1,477 @@
+---
+# The declared developer tools.
+#
+# Debian packages come from the archive. `dotnet-sdk-10.0` is the one package
+# from Microsoft's official Debian repository; the repository is declared
+# only when the `dotnet` group is selected, and its key is pinned by checksum
+# and read back by fingerprint. The role installs and reads back; it never
+# removes a package a site dropped from `developer_tools`.
+
+- name: The declared developer tools are known
+  ansible.builtin.assert:
+    that:
+      - >-
+        developer_tools
+        | difference(developer_tool_groups.keys() | list)
+        | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} declares developer_tools {{ developer_tools }};
+      valid groups are
+      {{ developer_tool_groups.keys() | list | sort | join(', ') }}.
+    success_msg: Every declared developer tool group is in the catalogue.
+
+- name: The developer packages are computed
+  ansible.builtin.set_fact:
+    developer_packages: >-
+      {{ developer_tools | map('extract', developer_tool_groups)
+         | flatten | unique | list }}
+    developer_debian_packages: >-
+      {{ developer_tools | map('extract', developer_tool_groups)
+         | flatten | unique
+         | reject('equalto', developer_dotnet_package) | list }}
+    developer_dotnet_packages: >-
+      {{ [developer_dotnet_package] if 'dotnet' in developer_tools else [] }}
+
+- name: The declared Debian developer packages are installed
+  ansible.builtin.apt:
+    name: "{{ developer_debian_packages }}"
+    state: present
+    cache_valid_time: "{{ developer_package_cache_valid_time }}"
+  when: developer_debian_packages | length > 0
+
+# --- .NET: the only package from a vendor feed ------------------------------
+#
+# The official `packages-microsoft-prod.deb` carries the key. It is pinned by
+# SHA-256, its key is read back by fingerprint, and the source is written here
+# only when `dotnet` is selected. A check-mode run before the repository exists
+# reports the repository change and skips the SDK simulation: apt has no
+# candidate to simulate yet.
+
+- name: The Debian identity is available for the .NET repository
+  ansible.builtin.assert:
+    that:
+      - identity_debian_major | default('') | length > 0
+      - identity_debian_release_name | default('') | length > 0
+    fail_msg: >-
+      The developer role needs the identity role for the .NET repository. Run
+      the identity tag before developer when developer_tools includes dotnet.
+  when: "'dotnet' in developer_tools"
+
+- name: The developer cache directory exists
+  ansible.builtin.file:
+    path: "{{ developer_dotnet_cache_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: developer_dotnet_packages | length > 0
+
+- name: The apt keyring directory exists
+  ansible.builtin.file:
+    path: "{{ developer_dotnet_key_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: developer_dotnet_packages | length > 0
+
+- name: The Microsoft key package is downloaded
+  ansible.builtin.get_url:
+    url: "{{ developer_dotnet_key_url }}"
+    dest: "{{ developer_dotnet_deb }}"
+    checksum: "{{ developer_dotnet_key_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: developer_dotnet_deb_file
+  when:
+    - developer_dotnet_packages | length > 0
+    # check mode does not create the cache directory, and get_url refuses a
+    # destination whose directory is absent. The repository change is still
+    # reported by the source template below.
+    - not ansible_check_mode
+
+- name: The Microsoft key package is unpacked
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: >-
+      dpkg-deb -x {{ developer_dotnet_deb }}
+      {{ developer_dotnet_cache_dir }}/microsoft-prod
+  # No `creates:`: a key rotation re-downloads the .deb and must replace the
+  # extracted key too. Extraction is cheap and reports no change by itself.
+  changed_when: false
+  when:
+    - developer_dotnet_packages | length > 0
+    - not ansible_check_mode
+
+- name: The Microsoft repository key is installed
+  ansible.builtin.copy:
+    src: "{{ developer_dotnet_key_source }}"
+    dest: "{{ developer_dotnet_key_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - developer_dotnet_packages | length > 0
+    - not ansible_check_mode
+
+- name: The Microsoft repository key fingerprint is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: gpg --batch --show-keys --with-colons {{ developer_dotnet_key_path }}
+  register: developer_dotnet_key_read
+  changed_when: false
+  when:
+    - developer_dotnet_packages | length > 0
+    - not ansible_check_mode
+
+- name: The Microsoft repository key is the pinned one
+  ansible.builtin.assert:
+    that:
+      - developer_dotnet_key_fingerprint in developer_dotnet_key_read.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: the key at {{ developer_dotnet_key_path }}
+      does not carry the pinned Microsoft fingerprint
+      {{ developer_dotnet_key_fingerprint }}.
+  when:
+    - developer_dotnet_packages | length > 0
+    - not ansible_check_mode
+
+- name: The .NET repository is declared
+  ansible.builtin.template:
+    src: microsoft-dotnet.list.j2
+    dest: "{{ developer_dotnet_repo_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: developer_dotnet_repo
+  when: developer_dotnet_packages | length > 0
+
+- name: The .NET repository is refreshed
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - developer_dotnet_packages | length > 0
+    - not ansible_check_mode
+    - developer_dotnet_repo.changed
+      or (developer_dotnet_deb_file is defined
+          and developer_dotnet_deb_file.changed)
+
+# Read after the repository refresh. In check mode on a host that does not yet
+# carry the repository, apt has no candidate and the SDK install is skipped
+# with a message rather than failed.
+- name: The .NET SDK candidate is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: apt-cache madison {{ developer_dotnet_package }}
+  environment:
+    LC_ALL: C
+  register: developer_dotnet_candidate
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# `apt-cache show` answers rc=0 with an empty output for an unknown package, so
+# the output is the fact and the return code is not (measured on desktop,
+# 2026-11-11).
+- name: The .NET SDK candidate is decided
+  ansible.builtin.set_fact:
+    developer_dotnet_available: >-
+      {{ developer_dotnet_candidate.stdout | default('') | trim | length > 0 }}
+
+- name: The .NET SDK is not simulated before its repository exists
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has no dotnet-sdk-10.0 candidate yet; check mode
+      reports the Microsoft repository change and cannot simulate the SDK.
+  when:
+    - developer_dotnet_packages | length > 0
+    - ansible_check_mode
+    - not developer_dotnet_available | bool
+
+- name: The declared .NET SDK is installed
+  ansible.builtin.apt:
+    name: "{{ developer_dotnet_packages }}"
+    state: present
+    cache_valid_time: "{{ developer_package_cache_valid_time }}"
+  when:
+    - developer_dotnet_packages | length > 0
+    - not ansible_check_mode or developer_dotnet_available | bool
+
+# The .NET CLI sends telemetry on first use unless the environment refuses it.
+# `environment.d` reaches the GNOME session, not only an interactive shell.
+- name: The .NET telemetry is refused in every session
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible; do not edit.
+      # SPDX-License-Identifier: AGPL-3.0-or-later
+      DOTNET_CLI_TELEMETRY_OPTOUT=1
+      DOTNET_NOLOGO=1
+    dest: /etc/environment.d/90-workstation-dotnet.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: developer_dotnet_packages | length > 0
+
+# --- VSCodium: the opt-in editor from its own feed ---------------------------
+#
+# No Debian package: the repository and its key exist only when the
+# `vscodium` group is selected. The key is pinned by SHA-256 and read back by
+# fingerprint; the package is installed and read back.
+- name: The VSCodium keyring directory exists
+  ansible.builtin.file:
+    path: "{{ developer_vscodium_key_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: "'vscodium' in developer_tools"
+
+- name: The VSCodium signing key is downloaded
+  ansible.builtin.get_url:
+    url: "{{ developer_vscodium_key_url }}"
+    dest: "{{ developer_vscodium_key_path }}"
+    checksum: "{{ developer_vscodium_key_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: developer_vscodium_key
+  when: "'vscodium' in developer_tools"
+
+- name: The VSCodium key fingerprint is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: gpg --batch --show-keys --with-colons {{ developer_vscodium_key_path }}
+  register: developer_vscodium_key_read
+  changed_when: false
+  when:
+    - "'vscodium' in developer_tools"
+    - not ansible_check_mode
+
+- name: The VSCodium key is the pinned one
+  ansible.builtin.assert:
+    that:
+      - developer_vscodium_key_fingerprint in developer_vscodium_key_read.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: the key at {{ developer_vscodium_key_path }}
+      does not carry the pinned fingerprint
+      {{ developer_vscodium_key_fingerprint }}. Refusing to add a repository
+      signed by another key.
+  when:
+    - "'vscodium' in developer_tools"
+    - not ansible_check_mode
+
+- name: The VSCodium repository is declared
+  ansible.builtin.template:
+    src: vscodium.list.j2
+    dest: "{{ developer_vscodium_repo_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: developer_vscodium_repo
+  when: "'vscodium' in developer_tools"
+
+- name: The VSCodium repository is refreshed
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - "'vscodium' in developer_tools"
+    - not ansible_check_mode
+    - developer_vscodium_key.changed or developer_vscodium_repo.changed
+
+- name: The VSCodium package is available
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: apt-cache madison {{ developer_vscodium_package }}
+  environment:
+    LC_ALL: C
+  register: developer_vscodium_candidate
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: "'vscodium' in developer_tools"
+
+- name: The VSCodium candidate is decided
+  ansible.builtin.set_fact:
+    developer_vscodium_available: >-
+      {{ (developer_vscodium_candidate.stdout | default('') | trim | length > 0)
+         if 'vscodium' in developer_tools else false }}
+
+- name: The VSCodium package is not simulated before its repository exists
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has no {{ developer_vscodium_package }} candidate
+      yet; check mode reports the VSCodium repository change and cannot
+      simulate the package.
+  when:
+    - "'vscodium' in developer_tools"
+    - ansible_check_mode
+    - not developer_vscodium_available | bool
+    - developer_vscodium_candidate.rc != 0
+
+- name: The VSCodium package is installed
+  ansible.builtin.apt:
+    name: "{{ developer_vscodium_package }}"
+    state: present
+    cache_valid_time: "{{ developer_package_cache_valid_time }}"
+  when:
+    - "'vscodium' in developer_tools"
+    - not ansible_check_mode or developer_vscodium_available | bool
+
+- name: The VSCodium package state is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ developer_vscodium_package }}
+  register: developer_vscodium_state
+  changed_when: false
+  failed_when: false
+  when:
+    - "'vscodium' in developer_tools"
+    - not ansible_check_mode
+
+- name: The VSCodium package is installed
+  ansible.builtin.assert:
+    that:
+      - developer_vscodium_state.stdout | trim == 'installed'
+    fail_msg: >-
+      {{ inventory_hostname }} has no {{ developer_vscodium_package }}
+      (dpkg answers `{{ developer_vscodium_state.stdout | trim }}`). The package
+      comes from VSCodium's official repository; check the selected
+      `developer_tools` and the pinned key.
+  when:
+    - "'vscodium' in developer_tools"
+    - not ansible_check_mode
+
+# --- Scripts: the latest public release, opt-in -------------------------------
+#
+# The interpreter is published as a Debian package in the project's GitHub
+# release, next to `SHA256SUMS`. The role resolves the release (latest by
+# default, or a pinned `developer_scripts_version`), checks the package against
+# the release checksum, installs it and reads the version back. No unpinned
+# tarball is executed.
+- name: The Scripts release is read
+  ansible.builtin.uri:
+    url: >-
+      {{ developer_scripts_api }}/{{ 'latest' if developer_scripts_version == 'latest'
+         else 'tags/v' ~ developer_scripts_version }}
+    return_content: true
+  register: developer_scripts_release
+  when: "'scripts' in developer_tools"
+
+- name: The Scripts release facts are known
+  ansible.builtin.set_fact:
+    developer_scripts_tag: "{{ developer_scripts_release.json.tag_name }}"
+    developer_scripts_number: >-
+      {{ developer_scripts_release.json.tag_name | regex_replace('^v', '') }}
+    developer_scripts_deb_name: >-
+      scripts_{{ developer_scripts_release.json.tag_name | regex_replace('^v', '') }}_{{ developer_scripts_arch }}.deb
+    developer_scripts_base_url: >-
+      https://github.com/{{ developer_scripts_repo }}/releases/download/{{ developer_scripts_release.json.tag_name }}
+  when: "'scripts' in developer_tools"
+
+- name: The Scripts cache directory exists
+  ansible.builtin.file:
+    path: "{{ developer_scripts_cache_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The Scripts release checksums are downloaded
+  ansible.builtin.get_url:
+    url: "{{ developer_scripts_base_url }}/SHA256SUMS"
+    dest: "{{ developer_scripts_cache_dir }}/SHA256SUMS-{{ developer_scripts_tag }}"
+    mode: "0644"
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The Scripts release checksums are read
+  ansible.builtin.slurp:
+    src: "{{ developer_scripts_cache_dir }}/SHA256SUMS-{{ developer_scripts_tag }}"
+  register: developer_scripts_sums
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The Scripts package checksum is known
+  ansible.builtin.set_fact:
+    developer_scripts_deb_checksum: >-
+      {{ (developer_scripts_sums.content | b64decode).splitlines()
+         | select('match', '^[0-9a-f]{64}  ' ~ developer_scripts_deb_name ~ '$')
+         | first | split(' ') | first }}
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The Scripts package is downloaded and verified
+  ansible.builtin.get_url:
+    url: "{{ developer_scripts_base_url }}/{{ developer_scripts_deb_name }}"
+    dest: "{{ developer_scripts_cache_dir }}/{{ developer_scripts_deb_name }}"
+    checksum: "sha256:{{ developer_scripts_deb_checksum }}"
+    mode: "0644"
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The Scripts package is installed
+  ansible.builtin.apt:
+    deb: "{{ developer_scripts_cache_dir }}/{{ developer_scripts_deb_name }}"
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The installed Scripts interpreter answers
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: /usr/bin/scripts --version
+  register: developer_scripts_version_state
+  changed_when: false
+  failed_when: false
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+- name: The Scripts interpreter is installed and runs
+  ansible.builtin.assert:
+    that:
+      - developer_scripts_version_state.rc == 0
+      - developer_scripts_version_state.stdout | trim | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: `/usr/bin/scripts --version` answered
+      rc={{ developer_scripts_version_state.rc | default('?') }}
+      `{{ developer_scripts_version_state.stdout | default('') | trim }}`.
+      The release package is {{ developer_scripts_deb_name }} from
+      {{ developer_scripts_tag }}.
+  when:
+    - "'scripts' in developer_tools"
+    - not ansible_check_mode
+
+# --- the read-back -----------------------------------------------------------
+
+- name: The developer package states are read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ item }}
+  loop: "{{ developer_packages }}"
+  loop_control:
+    label: "{{ item }}"
+  register: developer_package_states
+  changed_when: false
+  failed_when: false
+  when:
+    - developer_packages | length > 0
+    - not ansible_check_mode
+
+- name: Every declared developer package is installed
+  ansible.builtin.assert:
+    that:
+      - >-
+        developer_package_states.results
+        | rejectattr('stdout', 'equalto', 'installed') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} is missing
+      {{ developer_package_states.results
+         | rejectattr('stdout', 'equalto', 'installed')
+         | map(attribute='item') | list }}. The selected groups are
+      {{ developer_tools }}; check the Debian archive and the dotnet
+      repository before the next converge.
+  when:
+    - developer_packages | length > 0
+    - not ansible_check_mode

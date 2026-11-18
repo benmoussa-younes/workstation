@@ -1,0 +1,108 @@
+---
+# The end-of-play services. `common` runs first, but `gnome`/`printing` install
+# packages whose Recommends bring `avahi-daemon`; masking it before those
+# installs left the mask for the next converge. This file runs in `post_tasks`,
+# after every package the desktop declares.
+
+- name: Whether the unconfigured Avahi daemon is installed is known
+  ansible.builtin.stat:
+    path: /usr/sbin/avahi-daemon
+  register: common_avahi_present
+
+# `masked: true` is what makes the unit unstartable. It is not combined with
+# `enabled: false`: a masked unit reports `is-enabled = masked`, and the module
+# would report a change it does not make.
+- name: The unconfigured Avahi daemon cannot be started
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    masked: true
+  loop:
+    - avahi-daemon.service
+    - avahi-daemon.socket
+  when:
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+# The package ships two more ways to start the daemon this product refuses to
+# run: the unit alias `/etc/systemd/system/dbus-org.freedesktop.Avahi.service`
+# and the D-Bus activation file
+# `/usr/share/dbus-1/system-services/org.freedesktop.Avahi.service`. Masking the
+# unit alone leaves both pointing at a masked target, so every client that asks
+# for the name makes the bus log a failure at boot (measured on Debian 13:
+# `File exists` under `dbus-daemon`, `Activation request ... failed` under
+# `dbus-broker`). Retire both: the alias is masked by hand, because
+# `systemctl mask` refuses a name that already is a symlink, and the activation
+# file is diverted so the bus answers `The name is not activatable` and logs
+# nothing. `dbus-broker` does not ignore a service file symlinked to
+# `/dev/null` (measured: it reports the missing `D-Bus Service` section), so
+# the file is diverted rather than shadowed.
+- name: The Avahi unit alias is masked
+  ansible.builtin.file:
+    src: /dev/null
+    dest: /etc/systemd/system/dbus-org.freedesktop.Avahi.service
+    state: link
+    force: true
+  when:
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+  notify: Reload systemd
+
+- name: The Avahi D-Bus activation file is diverted
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    # A local diversion: the package keeps owning the file, an upgrade writes
+    # its new copy to `.distrib`, and the bus has no activation path to offer.
+    cmd: >-
+      dpkg-divert --local --rename --add
+      /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service
+    creates: /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service.distrib
+  when:
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+- name: The Avahi bus activation path is read back
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/systemd/system/dbus-org.freedesktop.Avahi.service
+    - /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service
+  register: common_avahi_retired
+
+- name: The Avahi bus activation path is retired
+  ansible.builtin.assert:
+    that:
+      - common_avahi_retired.results[0].stat.lnk_source | default('') == '/dev/null'
+      - not common_avahi_retired.results[1].stat.exists
+    fail_msg: >-
+      {{ inventory_hostname }}: a bus client can still ask Avahi to start.
+      The alias is
+      `{{ common_avahi_retired.results[0].stat.lnk_source | default('absent') }}`
+      and the activation file
+      {{ 'exists' if common_avahi_retired.results[1].stat.exists else 'is gone' }}.
+  when:
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+# `geoclue` reaches for mDNS to fetch NMEA from a GPS on the local network
+# (`[network-nmea]`). mDNS is retired above, so that source has no transport
+# and its probe is the one line still written at boot. The source is declared
+# off instead of being left to fail: the product keeps no mDNS path at all,
+# and the location service keeps its other sources.
+- name: Whether the location service has a configuration is known
+  ansible.builtin.stat:
+    path: "{{ common_geoclue_config }}"
+  register: common_geoclue_present
+
+- name: The location service does not look for a GPS on the local network
+  # `ansible.builtin` has no INI module and this collection pins no other one
+  # (see the diversion in `identity`). The pattern is scoped to the section:
+  # `enable=true` also appears under `[3g]` and `[cdma]`, and those stay on.
+  ansible.builtin.replace:
+    path: "{{ common_geoclue_config }}"
+    regexp: '(?m)(\[network-nmea\]\n(?:(?!^\[).*\n)*?)enable=true'
+    replace: '\1enable=false'
+    mode: "0644"
+  when:
+    - common_geoclue_present.stat.exists
+    - not ansible_check_mode
+  notify: Restart geoclue

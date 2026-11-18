@@ -1,0 +1,13 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Check daily whether a reboot is required
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+Unit=workstation-reboot-check.service
+
+[Install]
+WantedBy=timers.target

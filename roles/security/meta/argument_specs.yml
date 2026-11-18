@@ -1,0 +1,164 @@
+---
+argument_specs:
+  main:
+    short_description: The inbound firewall, sshd and the password policy.
+    description:
+      - >-
+        An nftables ruleset owned by this role, loaded from
+        `/etc/nftables.d/` after the site's `/etc/nftables.conf`, with a
+        default-deny `input` policy and a declared `forward` chain. It never
+        writes the package conffile and never runs `flush ruleset`, which would
+        wipe another manager's chains. The role also owns the sshd drop-in and
+        the password and lockout policies.
+    author: Younes BENMOUSSA
+    options:
+      security_retire_ufw:
+        type: bool
+        required: false
+        description: >-
+          Disable and stop `ufw` when it is present: two front-ends on one
+          kernel are two policies, and only one is declared here.
+      security_forward_policy:
+        type: str
+        required: false
+        description: >-
+          The `forward` chain policy. `drop` unless the site declares routes;
+          a host running Docker must choose `accept` or its published ports die.
+        choices: [drop, accept]
+      security_firewall_table:
+        type: str
+        required: false
+        description: The inet table this role owns.
+      security_nftables_dir:
+        type: str
+        required: false
+        description: The directory of the product's nftables drop-in.
+      security_nftables_file:
+        type: str
+        required: false
+        description: The file that declares the product's table.
+      security_nftables_service_dropin_dir:
+        type: str
+        required: false
+        description: The systemd drop-in directory for `nftables.service`.
+      security_nftables_service_dropin:
+        type: str
+        required: false
+        description: The drop-in that loads the site file, then the product table.
+      security_ruleset_snapshot:
+        type: str
+        required: false
+        description: >-
+          Where the role remembers the ruleset it last applied, so a live
+          firewall that no longer matches this product's declaration is noticed
+          and put back instead of converging silently.
+      security_ssh_port:
+        type: int
+        required: false
+        description: The port sshd listens on.
+      security_ssh_sources:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Networks or addresses allowed to reach sshd. Empty is refused when
+          `security_ssh_sources_required` is true; set
+          `security_ssh_sources_anywhere: true` to expose sshd to the world
+          deliberately.
+      security_extra_services:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          Reachable services declared by other roles, as port/proto and an
+          optional `sources` list of networks to scope them to. A service with
+          no `sources` is reachable from anywhere the policy otherwise allows.
+      security_extra_protocols:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          Reachable protocols that a port cannot express, as a protocol number
+          and an optional `sources` list of networks. VRRP (keepalived, decision
+          0042) is protocol 112: it has no port, and a rule rendered as a port
+          would match nothing and silently drop the adverts.
+      security_forward_flows:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          What this product ROUTES through a node, as `iif`/`oif` interface pairs
+          with an optional `sources` list. The forward hook's policy is drop, so
+          anything not declared here is not forwarded at all.
+      security_sshd_client_alive_interval:
+        type: int
+        required: false
+        description: Seconds of silence before a session is probed.
+      security_sshd_client_alive_count_max:
+        type: int
+        required: false
+        description: Unanswered probes before the session is closed.
+      security_sshd_max_sessions:
+        type: int
+        required: false
+        description: Channels allowed in one SSH connection.
+      security_sshd_allow_groups:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The groups whose members may log in over SSH. An allowlist, not a
+          key", which is the wrong end state even when it is the safe default.
+          - sudo
+      security_password_min_length:
+        type: int
+        required: false
+        description: The minimum password length the quality policy enforces.
+      security_password_max_days:
+        type: int
+        required: false
+        description: The maximum password age, in days.
+      security_password_min_days:
+        type: int
+        required: false
+        description: The minimum password age, in days.
+      security_password_warn_days:
+        type: int
+        required: false
+        description: How many days before expiry the user is warned.
+      security_password_reject_userinfo:
+        type: bool
+        required: false
+        description: Refuse a password containing the username or the account's own data.
+      security_faillock_conf:
+        type: str
+        required: false
+        description: The security_faillock_conf the role declares (defaults/main.yml).
+      security_faillock_deny:
+        type: int
+        required: false
+        description: The security_faillock_deny the role declares (defaults/main.yml).
+      security_faillock_pam_config:
+        type: str
+        required: false
+        description: The security_faillock_pam_config the role declares (defaults/main.yml).
+      security_faillock_unlock_time:
+        type: int
+        required: false
+        description: The security_faillock_unlock_time the role declares (defaults/main.yml).
+      security_ssh_sources_anywhere:
+        type: bool
+        required: false
+        description: The security_ssh_sources_anywhere the role declares (defaults/main.yml).
+      security_ssh_sources_required:
+        type: bool
+        required: false
+        description: The security_ssh_sources_required the role declares (defaults/main.yml).
+      security_sshd_service_dropin:
+        type: str
+        required: false
+        description: The security_sshd_service_dropin the role declares (defaults/main.yml).
+      security_sshd_service_dropin_dir:
+        type: str
+        required: false
+        description: The security_sshd_service_dropin_dir the role declares (defaults/main.yml).

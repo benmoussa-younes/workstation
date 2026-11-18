@@ -1,0 +1,77 @@
+---
+# This product's time: whoever owns the clock, and a host serving its own NTP.
+#
+# Debian's time daemons are mutually exclusive at the package level: `chrony`,
+# `ntpsec`, `openntpd` and `systemd-timesyncd` all `Provides: time-daemon` and
+# `Conflicts: time-daemon`, so `apt` removes one to install the other (verified
+# on a converted host, not assumed). Exactly one may run: two disciplinarians fight for
+# the clock. This role is therefore the SINGLE owner of the host's time daemon;
+# `common` deliberately installs none.
+#
+# Serving is structural: the product names the hosts that serve,
+# and a converge on every other host installs the client instead.
+
+# Whether THIS host serves NTP to the others. Structural, false by default.
+time_serve: false
+
+# The host's timezone. `UTC` is the generic server default; a site that wants a
+# local zone declares it here. The role applies it with `timedatectl`, and a
+# value with no `/usr/share/zoneinfo/<name>` is refused.
+time_timezone: Etc/UTC
+
+# The two daemons Debian offers, as named constants. Which one is installed is a
+# fact of the host's role, not a preference, so the names live here and the
+# tasks never spell one inline.
+time_client_package: systemd-timesyncd
+time_server_package: chrony
+
+# --- the client (systemd-timesyncd) ------------------------------------------
+
+# This product's NTP servers, as a client sees them. The inventory names them;
+# the clients sync from those hosts, not from the internet.
+time_servers: []
+
+# The clients' fallback when the declared servers are silent. The policy is
+# **declared servers only, no public fallback**: timesyncd has no
+# server preference, so a pool in `NTP=` is a co-equal candidate that wins the
+# boot race when this product is restarting, and it never returns. Set this to a
+# list to re-introduce a fallback deliberately.
+time_client_fallback_pools: []
+
+# The client keeps its drop-in, so the distribution's file stays untouched.
+time_timesyncd_conf_dir: /etc/systemd/timesyncd.conf.d
+time_timesyncd_conf: "{{ time_timesyncd_conf_dir }}/50-workstation.conf"
+
+# --- the server (chrony) -----------------------------------------------------
+
+# The subnet a serving host answers. Empty is refused on a serving host: chrony
+# already refuses every client by default, so an empty value would serve nobody.
+time_subnet: ""
+
+# Where a serving host disciplines its OWN clock, ADDED to the distribution's
+# sources. Empty uses Debian's pool alone; a value here never replaces it (a
+# drop-in cannot remove the stock `pool` line).
+time_upstream_pools: []
+
+# The interface the NTP socket binds. Empty leaves chrony on every interface and
+# relies on `allow` and the firewall; a named interface is defence in depth.
+time_interface: ""
+
+# The distribution's conffile and the drop-in directory it includes. Debian's
+# file carries `confdir`, `sourcedir`, `keyfile`, `driftfile`, `ntsdumpdir`,
+# `maxupdateskew`, `leapseclist`, `rtcsync` and `makestep`; the role adds a file
+# under `confdir` instead of overwriting it, so none of those is lost.
+time_chrony_stock: /etc/chrony/chrony.conf
+time_chrony_conf_dir: /etc/chrony/conf.d
+time_chrony_dropin: "{{ time_chrony_conf_dir }}/50-workstation.conf"
+
+# Abuse resistance: a time server is an amplifier if it answers every spoofed
+# request. Per-source rate limiting, declared explicitly (`interval 3` is the
+# chrony default; naming it says this product chose it).
+time_ratelimit_interval: 3
+time_ratelimit_burst: 8
+
+# The monitoring/command port. 0 opens no remote `chronyc` at all; the Unix
+# command socket stays, so `sudo chronyc` on the host still works. This is the
+# correct setting for a site that never queries chrony remotely.
+time_command_port: 0

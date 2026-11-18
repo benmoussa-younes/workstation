@@ -1,0 +1,11 @@
+---
+profile: production
+exclude_paths:
+  - .ansible/
+  # A vault is ciphertext, not YAML: every linter would read it as a broken file.
+  - inventories/**/vault.yml
+skip_list:
+  - name[template]
+warn_list:
+  - experimental
+  - var-naming[no-role-prefix]

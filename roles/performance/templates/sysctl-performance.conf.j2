@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Every value is a declaration, not a default: the audit found them stock, which
+# is the same as nobody having decided. This file is `vm.*` only — the security
+# knobs (`net.*`, `kernel.*`) belong to `60-hardening.conf`, and the role asserts
+# the two never touch the same key. It sorts first so a collision would resolve
+# to the security value.
+
+# How eagerly anonymous pages are swapped. The value follows the DEVICE: 10 is
+# right for a disk-backed swap. zram is not implemented by this role in this release.
+vm.swappiness = {{ performance_swappiness }}
+
+# Dirty write-back in BYTES, so the burst never scales with the host's RAM.
+vm.dirty_background_bytes = {{ performance_dirty_background_bytes }}
+vm.dirty_bytes = {{ performance_dirty_bytes }}
+vm.dirty_expire_centisecs = {{ performance_dirty_expire_centisecs }}
+vm.dirty_writeback_centisecs = {{ performance_dirty_writeback_centisecs }}
+
+# Keep dentries and inodes longer; the working set is small and the cache pays.
+vm.vfs_cache_pressure = {{ performance_vfs_cache_pressure }}

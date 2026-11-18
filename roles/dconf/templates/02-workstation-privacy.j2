@@ -1,0 +1,23 @@
+# Managed by Ansible; do not edit.
+#
+# Privacy: no history, no telemetry, cleanup on, the USB guard active while the
+# screen is locked. `03-workstation-privacy` in `locks/` makes the keys
+# non-overridable.
+#
+# `old-files-age` is a `uint32` (days) and says so. The external search provider
+# is disabled here and not merely in the file manager: a search box that queries
+# the network is a request the desktop stack does not make in this product.
+[org/gnome/desktop/privacy]
+remember-recent-files={{ dconf_privacy_remember_recent_files | bool | lower }}
+remember-app-usage={{ dconf_privacy_remember_app_usage | bool | lower }}
+send-software-usage-stats={{ dconf_privacy_send_software_usage_stats | bool | lower }}
+report-technical-problems={{ dconf_privacy_report_technical_problems | bool | lower }}
+remove-old-temp-files={{ dconf_privacy_remove_old_temp_files | bool | lower }}
+remove-old-trash-files={{ dconf_privacy_remove_old_trash_files | bool | lower }}
+old-files-age=uint32 {{ dconf_privacy_old_files_age }}
+show-full-name-in-top-bar={{ dconf_privacy_show_full_name_in_top_bar | bool | lower }}
+usb-protection={{ dconf_privacy_usb_protection | bool | lower }}
+usb-protection-level='{{ dconf_privacy_usb_protection_level }}'
+
+[org/gnome/desktop/search-providers]
+disable-external={{ dconf_privacy_disable_external_search | bool | lower }}

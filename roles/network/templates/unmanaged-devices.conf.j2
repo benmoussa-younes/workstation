@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The devices NetworkManager must not touch. An interface named here is not
+# brought up by a second stack: it is the site's, and the kernel keeps it as the
+# site leaves it. Declaring it is what removes it from NetworkManager's pool.
+#
+# `lo` is listed because Debian's own configuration leaves it unmanaged; naming
+# it makes the list the whole declaration instead of a set of exceptions.
+[device]
+{% for device in network_unmanaged_devices %}
+unmanaged-devices+=interface-name:{{ device }}
+{% endfor %}

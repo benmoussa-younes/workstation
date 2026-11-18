@@ -1,0 +1,76 @@
+---
+# The collection contract. `version` must equal VERSION: the gate refuses a
+# mismatch, and the release workflow checks it against the pushed tag.
+namespace: benmoussa
+name: workstation
+version: "0.1.0"
+readme: README.md
+authors:
+  - Younes BENMOUSSA <younes.benmoussa@pm.me>
+description: >-
+  Ansible roles that turn a Debian amd64 machine into a GNOME desktop on
+  Wayland: the session, GDM, the link under NetworkManager, the identity, the
+  boot splash, the declared applications and the developer tool groups. The
+  human account is the site's.
+license:
+  - AGPL-3.0-or-later
+  - CC-BY-SA-4.0
+  - GPL-2.0-or-later
+tags:
+  - linux
+  - security
+  - debian
+  - desktop
+  - gnome
+  - wayland
+  - workstation
+  - hardening
+dependencies: {}
+homepage: https://github.com/benmoussa-younes/workstation
+repository: https://github.com/benmoussa-younes/workstation
+issues: https://github.com/benmoussa-younes/workstation/issues
+documentation: https://github.com/benmoussa-younes/workstation#readme
+
+# What a collection consumer must not receive: the repository tooling, the
+# example inventory (a collection never carries an inventory), the CI and the
+# development configuration. The brand assets ARE included: the `branding` and
+# `plymouth` roles read them from the collection root.
+build_ignore:
+  - .git
+  - .git/**
+  - .github
+  - .github/**
+  - .ansible
+  - .ansible/**
+  - dist
+  - dist/**
+  - artifacts
+  - artifacts/**
+  - inventories
+  - inventories/**
+  - tools
+  - tools/**
+  - tests
+  - tests/**
+  - .opencode
+  - .opencode/**
+  - .vscode
+  - .vscode/**
+  - .agents
+  - .agents/**
+  - .idea
+  - .idea/**
+  - docs
+  - docs/**
+  - AGENTS.md
+  - "**/AGENTS.md"
+  - CONTRIBUTING.md
+  - SECURITY.md
+  - .gitignore
+  - .gitattributes
+  - .yamllint
+  - .ansible-lint
+  - ansible.cfg
+  - requirements.yml
+  - "*.tar.gz"
+  - "*.retry"

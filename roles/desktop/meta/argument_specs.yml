@@ -1,0 +1,80 @@
+---
+argument_specs:
+  main:
+    short_description: The human account's desktop groups, locale and Bluetooth daemon.
+    description:
+      - >-
+        Prepares the account the workstation serves: asserts it exists (the
+        product never creates an account), adds it to the declared desktop
+        groups that the host actually has, generates the declared UTF-8 locale
+        and writes the session's `LANG`/`LANGUAGE`, and installs and unmasks the
+        Bluetooth daemon the server base masks. Every result is read back. No
+        session is restarted: group membership applies at the next login.
+    author: Younes BENMOUSSA
+    options:
+      workstation_user:
+        type: str
+        required: true
+        description: >-
+          The human account this workstation serves. It must already exist; the
+          role fails, naming it, when it does not. Site data, so there is no
+          default.
+      workstation_desktop_groups:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The groups the account is added to. Only the groups present on the host
+          are used; the role never creates one.
+      workstation_desktop_groups_critical:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The groups a desktop cannot work without. A host missing one fails the
+          run instead of receiving a membership it cannot use.
+      workstation_locale:
+        type: str
+        required: false
+        description: >-
+          The locale to generate, in `locale -a` notation (for example
+          `fr_FR.UTF-8`). It is enabled in `/etc/locale.gen` and read back from
+          `locale -a`.
+      workstation_locale_language:
+        type: str
+        required: false
+        description: >-
+          The `LANGUAGE=` value: a colon-separated preference list, not a locale
+          name.
+      workstation_locale_gen:
+        type: str
+        required: false
+        description: The file that declares which locales are generated.
+      workstation_locale_charmap:
+        type: str
+        required: false
+        description: The character map column written beside the locale.
+      workstation_locale_default:
+        type: str
+        required: false
+        description: The file every session reads `LANG` and `LANGUAGE` from.
+      workstation_locale_gen_command:
+        type: str
+        required: false
+        description: >-
+          The locale generator, as an absolute path: `/usr/sbin` is not in every
+          account's `PATH`.
+      workstation_bluetooth:
+        type: bool
+        required: false
+        description: >-
+          Whether the Bluetooth daemon is declared. True: a desktop has a
+          Bluetooth page in its settings, and the server base masks the unit.
+      workstation_bluez_package:
+        type: str
+        required: false
+        description: The Bluetooth daemon package.
+      workstation_bluetooth_service:
+        type: str
+        required: false
+        description: The unit that provides the Bluetooth daemon.

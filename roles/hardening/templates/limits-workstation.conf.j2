@@ -1,0 +1,14 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A declared base of resource limits. Per-service limits -- a
+# database's memory, a proxy's backlog -- belong to the roles that run them, not
+# here: the base does not guess.
+* soft nofile {{ hardening_limits_nofile }}
+* hard nofile {{ hardening_limits_nofile }}
+* soft nproc {{ hardening_limits_nproc }}
+* hard nproc {{ hardening_limits_nproc }}
+# `*` and `root` are distinct entries: an administrator shell needs the same
+# headroom as a service account.
+root soft nofile {{ hardening_limits_nofile }}
+root hard nofile {{ hardening_limits_nofile }}

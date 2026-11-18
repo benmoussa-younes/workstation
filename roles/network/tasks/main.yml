@@ -1,0 +1,747 @@
+---
+# NetworkManager, and the migration of the link from its previous owner.
+#
+# Three modes, decided from the machine's actual state:
+#
+#   boot   ifupdown still owns the device. Write the Wi-Fi keyfile, keep a 0600
+#          copy of `/etc/network/interfaces`, reduce the active file to loopback,
+#          disable the old units for the NEXT boot and enable NetworkManager. The
+#          running ifupdown keeps the link: nothing is cut during the converge.
+#   live   systemd-networkd owns the device. The detached hand-over does the same
+#          at once, with the address the host already has.
+#   verify NetworkManager already owns the device. Read it back; touch nothing.
+#
+# The Wi-Fi keyfile follows NetworkManager's keyfile plugin
+# (`nm-settings-keyfile(5)`): `/etc/NetworkManager/system-connections/*` is
+# root-only, `[wifi]`/`[wifi-security]` are the aliases of the 802-11 settings,
+# and `[ipv4] address1`/`gateway` carry the static address.
+
+- name: The interface that carries the link is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: ip -o -4 route show default
+  register: network_default_route
+  changed_when: false
+  check_mode: false
+
+- name: The link owner the migration adopts is the one that carries the route
+  ansible.builtin.assert:
+    that:
+      - network_handover_devices | length > 0
+      - network_handover_devices[0] | length > 0
+      - "'default via' in network_default_route.stdout"
+      - >-
+        (' dev ' ~ network_handover_devices[0] ~ ' ')
+        in (network_default_route.stdout ~ ' ')
+      - network_unmanaged_devices | intersect(network_handover_devices) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no default route to hand to NetworkManager, or
+      the adopted interface is also declared unmanaged
+      ({{ network_handover_devices }}). Converge from the host's console.
+
+- name: The other link owners' state is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl show -p UnitFileState -p ActiveState systemd-networkd.service
+  register: network_networkd_state
+  changed_when: false
+  check_mode: false
+
+# The boot-mode profile may already be written, with the reboot still pending.
+# These two reads decide whether the link is on the way to NetworkManager or
+# already there; they are read-only.
+- name: The boot-mode NetworkManager profile is read
+  ansible.builtin.stat:
+    path: "{{ network_boot_profile }}"
+  register: network_boot_profile_stat
+  check_mode: false
+
+- name: NetworkManager's current device state is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: nmcli -t -f DEVICE,STATE device status
+  register: network_nm_before
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# The installer's ifupdown file is a secret store: it holds the Wi-Fi PSK. It is
+# read only to decide ownership and, in `boot` mode, to seed the NetworkManager
+# keyfile. `no_log` keeps the PSK out of the run output.
+- name: The installer's ifupdown file is read
+  ansible.builtin.slurp:
+    src: "{{ network_ifupdown_file }}"
+  register: network_ifupdown_content
+  failed_when: false
+  no_log: true
+
+- name: The installer's ifupdown ownership is decided
+  ansible.builtin.set_fact:
+    network_ifupdown_owns: >-
+      {{ (network_ifupdown_content.content | default('') | b64decode)
+         is search('(?m)^[ \t]*iface[ \t]+'
+                   ~ (network_handover_devices[0] | regex_escape)
+                   ~ '[ \t]+inet') }}
+
+# A desktop may be wired. The boot path must not demand an SSID from an
+# interface that has no radio: the kernel exposes `wireless` only for a Wi-Fi
+# device, and the ifupdown stanza says whether the address is DHCP or static.
+- name: The adopted interface's radio is read
+  ansible.builtin.stat:
+    path: "/sys/class/net/{{ network_handover_devices[0] }}/wireless"
+  register: network_link_wireless
+  check_mode: false
+
+# Order matters: NetworkManager already connected is `verify`; a running or
+# enabled systemd-networkd is `live`, even when a stale ifupdown file still
+# names the interface; a written boot keyfile that the running link has not
+# adopted yet is `boot_pending`; only a host where ifupdown is the actual owner
+# is `boot`. Testing ifupdown first turned a dual-owner host into a second boot
+# migration beside networkd.
+#
+# `boot_pending` does not require `network_apply: boot`: the site's `auto` mode
+# reaches the same state on its second run, and treating it as `verify` failed a
+# boot migration that was waiting for its reboot (measured on the laptop,
+# 2026-11-18: `wlo1:unmanaged`, the keyfile written, the reboot still pending).
+- name: The effective link migration is decided
+  ansible.builtin.set_fact:
+    network_effective_apply: >-
+      {{ 'verify' if (network_nm_before.stdout
+                      is search((network_handover_devices[0] | regex_escape) ~ ':connected'))
+         else 'live' if (network_apply == 'live')
+         else 'live' if (network_apply == 'auto'
+                         and ('ActiveState=active' in network_networkd_state.stdout
+                              or 'UnitFileState=enabled' in network_networkd_state.stdout))
+         else 'boot_pending' if (not network_ifupdown_owns | bool
+                                 and network_boot_profile_stat.stat.exists | default(false))
+         else 'boot' if (network_apply == 'boot' and network_ifupdown_owns | bool)
+         else 'boot' if (network_apply == 'auto' and network_ifupdown_owns | bool)
+         else 'verify' }}
+
+- name: The packages NetworkManager needs are present
+  ansible.builtin.apt:
+    name: "{{ network_packages }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The NetworkManager drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ network_manager_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The profile store and the radio's identity. `keyfile` is the only store this
+# product writes; the ifupdown plugin goes with the owner the `boot` mode
+# retires. The two `wifi.*` settings keep the hardware address on the air, which
+# a site that reserves the address by MAC depends on.
+- name: The profile store and the radio are declared
+  ansible.builtin.template:
+    src: main.conf.j2
+    dest: "{{ network_manager_main_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload NetworkManager
+
+# The devices NetworkManager must not manage. A device named here gets NO second
+# stack: it is the site's, and the kernel keeps it as the site left it.
+- name: The devices NetworkManager must not manage are declared
+  ansible.builtin.template:
+    src: unmanaged-devices.conf.j2
+    dest: "{{ network_manager_conf_dir }}/10-workstation-unmanaged.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload NetworkManager
+
+# `systemd-resolved` runs the stub (`/etc/resolv.conf` ->
+# `/run/systemd/resolve/stub-resolv.conf`, the `resolver` role). NetworkManager
+# hands its link DNS to that stub rather than starting a private `dnsmasq`.
+- name: The resolver NetworkManager hands its DNS to is declared
+  ansible.builtin.template:
+    src: dns.conf.j2
+    dest: "{{ network_manager_dns_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload NetworkManager
+
+# The radio sleeps between beacons unless it is told not to; the default is the
+# driver's, and Debian enables it. Measured on the desktop site, 2026-11-11: the
+# mean round trip is 56.99 ms with it and 2.35 ms without, on the same access
+# point and signal. A profile that names `wifi.powersave` keeps its own value.
+- name: The radio's power saving is declared
+  ansible.builtin.template:
+    src: wifi-powersave.conf.j2
+    dest: "{{ network_manager_conf_dir }}/20-workstation-wifi-powersave.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload NetworkManager
+
+# The address as it is now: the boot keyfile and the live hand-over both carry
+# the address the host already has, so neither changes the address the converge
+# session uses.
+- name: The current address of the adopted interface is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: ip -o -4 addr show dev {{ network_handover_devices[0] }} scope global
+  register: network_current_address
+  changed_when: false
+  check_mode: false
+
+- name: The address and gateway the migration carries are computed
+  ansible.builtin.set_fact:
+    network_adopted_address_cidr: "{{ network_current_address.stdout.split()[3] | default('') }}"
+    network_adopted_gateway: >-
+      {{ (network_default_route.stdout.split('via ')[1].split()[0]
+          if 'via ' in network_default_route.stdout else '') }}
+
+- name: The host has an address to carry into NetworkManager
+  ansible.builtin.assert:
+    that:
+      - network_adopted_address_cidr | length > 0
+      - network_adopted_gateway | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ network_handover_devices[0] }} has no global
+      address or no gateway to carry into NetworkManager. A migration would
+      leave the machine unreachable.
+
+# A declared address is a site declaration, not a guess: the CIDR and the
+# gateway go together, or the keyfile would carry one and not the other. The
+# shape is checked here rather than in the template, so a typo fails the run
+# before the machine writes a profile it cannot activate.
+- name: The declared static address is complete and well formed
+  ansible.builtin.assert:
+    that:
+      - (network_boot_address | length > 0) == (network_boot_gateway | length > 0)
+      - network_boot_address | length == 0
+        or network_boot_address is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$')
+      - network_boot_gateway | length == 0
+        or network_boot_gateway is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}$')
+    fail_msg: >-
+      {{ inventory_hostname }} declares an incomplete static address
+      (`network_boot_address: {{ network_boot_address }}`,
+      `network_boot_gateway: {{ network_boot_gateway }}`). Declare both as an
+      IPv4 CIDR and an IPv4 gateway, or leave both empty to carry the running
+      address.
+  when: network_boot_address | length > 0 or network_boot_gateway | length > 0
+
+- name: The address and gateway the boot keyfile carries are decided
+  ansible.builtin.set_fact:
+    network_boot_address_cidr: >-
+      {{ network_boot_address if network_boot_address | length > 0
+         else network_adopted_address_cidr }}
+    network_boot_gateway_address: >-
+      {{ network_boot_gateway if network_boot_gateway | length > 0
+         else network_adopted_gateway }}
+
+# --- boot mode: declare the NetworkManager profile for the next boot ---------
+#
+# The running ifupdown is NOT stopped. The keyfile is written, the active
+# ifupdown file becomes loopback (the running interface keeps its address), the
+# old units are disabled for the next boot, and NetworkManager is enabled. The
+# reboot makes NetworkManager the owner; the next converge reads it back.
+
+# The supplicant file is the second place an ifupdown install keeps the radio.
+# It is read with `no_log` like the interfaces file, and only for `boot` mode.
+- name: The installer's supplicant file is read
+  ansible.builtin.slurp:
+    src: "{{ network_wpa_supplicant_file }}"
+  register: network_wpa_content
+  failed_when: false
+  no_log: true
+  when: network_effective_apply == 'boot'
+
+# `regex_findall` returns an empty list when the line is absent, unlike
+# `regex_search`, which raises on a miss. The credentials have three possible
+# homes: the site's declaration, the ifupdown file, the supplicant file.
+- name: The radio credentials are read from the installer files
+  ansible.builtin.set_fact:
+    # The installer quotes both values (`wpa-psk "…"`); a NetworkManager keyfile
+    # takes them unquoted, so the quotes are stripped here, not in the template.
+    network_ifupdown_ssid: >-
+      {{ (network_ifupdown_content.content | default('') | b64decode)
+         | regex_findall('(?m)^[ \t]*wpa-ssid[ \t]+"?([^"\n]+?)"?[ \t]*$')
+         | first | default('') | trim }}
+    network_ifupdown_psk: >-
+      {{ (network_ifupdown_content.content | default('') | b64decode)
+         | regex_findall('(?m)^[ \t]*wpa-psk[ \t]+"?([^"\n]+?)"?[ \t]*$')
+         | first | default('') | trim }}
+    network_wpa_ssid: >-
+      {{ (network_wpa_content.content | default('') | b64decode)
+         | regex_findall('(?m)^[ \t]*ssid="?([^"]+)"?[ \t]*$')
+         | first | default('') | trim }}
+    network_wpa_psk: >-
+      {{ (network_wpa_content.content | default('') | b64decode)
+         | regex_findall('(?m)^[ \t]*psk="?([^"]+)"?[ \t]*$')
+         | first | default('') | trim }}
+  no_log: true
+  when: network_effective_apply == 'boot'
+
+- name: The boot keyfile's link type and address method are decided
+  ansible.builtin.set_fact:
+    network_boot_link_is_wireless: "{{ network_link_wireless.stat.exists | default(false) }}"
+    network_ifupdown_dhcp: >-
+      {{ (network_ifupdown_content.content | default('') | b64decode)
+         is search('(?m)^[ \t]*iface[ \t]+'
+                   ~ (network_handover_devices[0] | regex_escape)
+                   ~ '[ \t]+inet[ \t]+dhcp') }}
+  when: network_effective_apply == 'boot'
+
+# A wired DHCP link learns its resolver from DHCP; a wired static link and every
+# Wi-Fi link carry the address manually and need `dns=` or the global fallback.
+- name: The boot keyfile's resolver source is decided
+  ansible.builtin.set_fact:
+    network_boot_method: >-
+      {{ 'auto' if (not (network_boot_link_is_wireless | bool)
+                    and (network_ifupdown_dhcp | bool))
+         else 'manual' }}
+  when: network_effective_apply == 'boot'
+
+- name: The declared radio and the installer radio are resolved
+  ansible.builtin.set_fact:
+    network_wifi_ssid_effective: >-
+      {{ network_wifi_ssid if network_wifi_ssid | length > 0
+         else (network_ifupdown_ssid if network_ifupdown_ssid | length > 0
+               else network_wpa_ssid) }}
+    network_wifi_psk_effective: >-
+      {{ network_wifi_psk if network_wifi_psk | length > 0
+         else (network_ifupdown_psk if network_ifupdown_psk | length > 0
+               else network_wpa_psk) }}
+  no_log: true
+  when: network_effective_apply == 'boot'
+
+- name: The Wi-Fi credentials are present
+  ansible.builtin.assert:
+    that:
+      - network_wifi_ssid_effective | length > 0
+      - network_wifi_psk_effective | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: neither ifupdown, the supplicant file nor the
+      site declaration has an SSID and a PSK for
+      {{ network_handover_devices[0] }}. NetworkManager cannot be given a Wi-Fi
+      profile it cannot authenticate; declare the radio in the site's vault, or
+      keep ifupdown.
+  when:
+    - network_effective_apply == 'boot'
+    - network_boot_link_is_wireless | bool
+
+# The helper lives on the managed host: `command` runs there, and the role's own
+# `files/` directory is on the controller.
+- name: The Wi-Fi key helper is present
+  ansible.builtin.copy:
+    src: wpa-psk-hash.py
+    dest: "{{ network_wpa_psk_helper }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+# The keyfile carries the derived key, not the passphrase. The passphrase goes
+# to the helper on stdin, never on its command line, so it is not in `ps` and
+# not in the run output.
+- name: The Wi-Fi passphrase is derived into the key the radio stores
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    argv:
+      - python3
+      - "{{ network_wpa_psk_helper }}"
+      - --derive
+    stdin: "{{ network_wifi_ssid_effective }}\n{{ network_wifi_psk_effective }}"
+  register: network_wifi_derived
+  changed_when: false
+  no_log: true
+  when:
+    - network_effective_apply == 'boot'
+    - network_boot_link_is_wireless | bool
+
+- name: The Wi-Fi key is the derived one
+  # Always derived, even when the passphrase looks like a key: a site's Wi-Fi
+  # password may itself be 64 hex characters, and the access point expects the
+  # PBKDF2 of what the site typed. A site that really holds a derived key says
+  # so with `network_wifi_psk_is_derived: true`.
+  ansible.builtin.set_fact:
+    network_wifi_psk_hashed: >-
+      {{ (network_wifi_psk_effective
+          if network_wifi_psk_is_derived | bool
+          else network_wifi_derived.stdout)
+         | trim }}
+  no_log: true
+  when:
+    - network_effective_apply == 'boot'
+    - network_boot_link_is_wireless | bool
+
+# The keyfile's `method=manual` learns no resolver from DHCP. A reboot with
+# neither a declared link DNS nor a global fallback leaves `/etc/resolv.conf`
+# empty, and the next converge fails on its first `apt` task before the
+# `resolver` role can help (measured on the first production site, 2026-10-27:
+# `Temporary failure resolving 'deb.debian.org'`). Refuse that reboot here.
+#
+# `boot_pending` is covered too: an earlier release wrote the keyfile, the host has not
+# rebooted yet, and the product does not re-render a profile it already declared
+# (the running ifupdown still carries the link). In that mode `network_boot_dns`
+# is NOT a source: nothing writes it into the pending file, so only the global
+# fallback or the pending keyfile's own `dns=` counts.
+- name: A pending boot keyfile's resolver and method are read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: grep -E '^(dns|method)=' {{ network_boot_profile }}
+  register: network_boot_profile_dns
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  when: network_effective_apply == 'boot_pending'
+
+- name: The pending keyfile's declared DNS is known
+  ansible.builtin.set_fact:
+    network_boot_pending_dns: >-
+      {{ network_boot_profile_dns.stdout | default('') | trim
+         if network_effective_apply == 'boot_pending' else '' }}
+    network_boot_pending_dhcp: >-
+      {{ 'method=auto' in (network_boot_profile_dns.stdout | default(''))
+         if network_effective_apply == 'boot_pending' else false }}
+
+- name: The keyfile this run writes has a resolver to ask
+  ansible.builtin.assert:
+    that:
+      - network_boot_method == 'auto'
+        or network_boot_dns | length > 0
+        or (resolver_fallback_dns | default([]) | length > 0)
+    fail_msg: >-
+      {{ inventory_hostname }} would reboot with no resolver: the boot keyfile
+      declares a manual address and no `dns=`, and `resolver_fallback_dns` is
+      empty. Declare `network_boot_dns` (the link's servers) or
+      `resolver_fallback_dns` (systemd-resolved's global servers) before the
+      reboot. The `resolver` role runs after the package baseline and cannot
+      repair a resolver the baseline needs.
+  when: network_effective_apply == 'boot'
+
+- name: The pending keyfile has a resolver to ask
+  ansible.builtin.assert:
+    that:
+      - network_boot_pending_dhcp | bool
+        or (resolver_fallback_dns | default([]) | length > 0)
+        or network_boot_pending_dns | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }} has an older NetworkManager keyfile waiting for
+      the next boot, it declares no `dns=`, and `resolver_fallback_dns` is
+      empty. Nothing rewrites that pending file in this mode, so the machine
+      would boot without a resolver. Declare `resolver_fallback_dns`, or
+      rewrite the keyfile on the console before the reboot.
+  when: network_effective_apply == 'boot_pending'
+
+# `nm-settings-keyfile(5)`: the keyfile plugin ignores a file any user other than
+# root can read or write. The PSK is in the file, so the whole task is no_log.
+- name: The NetworkManager boot keyfile is declared for the next boot
+  ansible.builtin.template:
+    src: >-
+      {{ 'wifi.nmconnection.j2' if network_boot_link_is_wireless | bool
+         else 'ethernet.nmconnection.j2' }}
+    dest: "{{ network_boot_profile }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: network_effective_apply == 'boot'
+
+- name: The installer's ifupdown file is preserved once
+  ansible.builtin.copy:
+    src: "{{ network_ifupdown_file }}"
+    dest: "{{ network_ifupdown_backup }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  when:
+    - network_effective_apply == 'boot'
+    - not network_boot_link_is_wireless | bool
+
+- name: The installer's ifupdown file is preserved once, with the key derived
+  # The copy keeps the interface declaration for a rollback, and the passphrase
+  # never lands in a second file: the `wpa-psk` line carries the key the radio
+  # uses instead. Written once (`force: false`), so a later run cannot derive a
+  # value that is already a key.
+  ansible.builtin.copy:
+    content: >-
+      {{ (network_ifupdown_content.content | default('') | b64decode)
+         | regex_replace('(?m)^([ \t]*wpa-psk[ \t]+).*$',
+                         '\1"' ~ (network_wifi_psk_hashed | default('')) ~ '"') }}
+    dest: "{{ network_ifupdown_backup }}"
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  no_log: true
+  when:
+    - network_effective_apply == 'boot'
+    - network_boot_link_is_wireless | bool
+
+- name: The next boot has one link owner
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible. NetworkManager owns the radio from the next boot;
+      # the installer's file is kept at {{ network_ifupdown_backup }}.
+      auto lo
+      iface lo inet loopback
+    dest: "{{ network_ifupdown_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: network_effective_apply == 'boot'
+
+- name: The previous owners do not start at the next boot
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+  loop:
+    - networking.service
+    - wpa_supplicant.service
+  when:
+    - network_effective_apply == 'boot'
+    - not ansible_check_mode
+
+- name: NetworkManager starts at the next boot
+  ansible.builtin.systemd_service:
+    name: NetworkManager.service
+    enabled: true
+  when:
+    - network_effective_apply == 'boot'
+    - not ansible_check_mode
+
+- name: The link migration waits for the next boot
+  ansible.builtin.debug:
+    msg: >-
+      NetworkManager's Wi-Fi profile is written. The running ifupdown keeps the
+      link; reboot to let NetworkManager own {{ network_handover_devices[0] }},
+      then converge again to read the result back.
+  when: network_effective_apply == 'boot'
+
+- name: The boot migration is still pending
+  ansible.builtin.debug:
+    msg: >-
+      The NetworkManager profile and the loopback ifupdown file are in place;
+      the running ifupdown still carries the link. Reboot before the final
+      NetworkManager read-back; this run leaves the link untouched.
+  when: network_effective_apply == 'boot_pending'
+
+# --- live mode: the detached hand-over from systemd-networkd ----------------
+
+- name: The adopted connection profile is written
+  ansible.builtin.template:
+    src: adopted.nmconnection.j2
+    dest: "{{ network_handover_profile }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - network_effective_apply == 'live'
+    - network_profile_managed | bool
+  notify: Reload NetworkManager
+
+- name: The declarations are applied now
+  ansible.builtin.meta: flush_handlers
+
+- name: The hand-over script is in place
+  ansible.builtin.template:
+    src: handover.sh.j2
+    dest: "{{ network_handover_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - network_effective_apply == 'live'
+    - network_profile_managed | bool
+
+- name: The hand-over unit is in place
+  ansible.builtin.template:
+    src: workstation-network-handover.service.j2
+    dest: "{{ network_handover_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - network_effective_apply == 'live'
+    - network_profile_managed | bool
+  notify: Reload systemd
+
+- name: The hand-over units are loaded
+  ansible.builtin.meta: flush_handlers
+  when:
+    - network_effective_apply == 'live'
+    - network_profile_managed | bool
+
+- name: The link is handed over to NetworkManager
+  ansible.builtin.systemd_service:
+    name: workstation-network-handover.service
+    state: started
+  register: network_handover_start
+  failed_when: false
+  when:
+    - network_effective_apply == 'live'
+    - network_profile_managed | bool
+    - not ansible_check_mode
+    - "'ActiveState=active' in network_networkd_state.stdout
+       or 'UnitFileState=enabled' in network_networkd_state.stdout"
+
+- name: The hand-over's result is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl show -p Result --value workstation-network-handover.service
+  register: network_handover_outcome
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - network_handover_start is not skipped
+
+- name: The hand-over reached its end
+  ansible.builtin.assert:
+    that:
+      - network_handover_outcome.stdout | trim in ['success', 'skipped', '']
+    fail_msg: >-
+      {{ inventory_hostname }}: the hand-over to NetworkManager ended with
+      `{{ network_handover_outcome.stdout | trim }}`: NetworkManager did not
+      adopt {{ network_handover_devices[0] }}, so systemd-networkd was left in
+      place. Read `journalctl -u workstation-network-handover` on the console.
+  when:
+    - not ansible_check_mode
+    - network_handover_start is not skipped
+
+# --- read back ---------------------------------------------------------------
+
+- name: The link's owner is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: nmcli -t -f DEVICE,STATE device status
+  register: network_nmcli_status
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - network_effective_apply not in ['boot', 'boot_pending']
+
+- name: The default route is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: ip -o -4 route show default
+  register: network_route_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The other stack's state is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl show -p UnitFileState -p ActiveState systemd-networkd.service
+  register: network_networkd_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: NetworkManager owns the link and the host is still reachable
+  ansible.builtin.assert:
+    that:
+      - >-
+        network_nmcli_status.stdout_lines
+        | select('equalto', network_handover_devices[0] ~ ':connected')
+        | list | length > 0
+      - "'default via' in network_route_after.stdout"
+      - "'ActiveState=active' not in network_networkd_after.stdout"
+      - network_networkd_after.stdout is search('UnitFileState=(masked|disabled)')
+    fail_msg: >-
+      {{ inventory_hostname }}: NetworkManager does not report
+      {{ network_handover_devices[0] }} connected, the default route is gone, or
+      systemd-networkd still owns the link. nmcli says
+      {{ network_nmcli_status.stdout_lines | default([]) | join(' | ') }};
+      the route is `{{ network_route_after.stdout | default('') | trim }}`;
+      networkd says `{{ network_networkd_after.stdout | default('') | trim }}`.
+  when:
+    - not ansible_check_mode
+    - network_effective_apply not in ['boot', 'boot_pending']
+
+- name: The active ifupdown file no longer names the device
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: >-
+      grep -E '^[[:space:]]*iface[[:space:]]+
+      {{ network_handover_devices[0] | regex_escape }}[[:space:]]' {{ network_ifupdown_file }}
+  register: network_ifupdown_loopback
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - network_effective_apply in ['boot', 'boot_pending']
+
+- name: The NetworkManager keyfile is in place
+  ansible.builtin.stat:
+    path: "{{ network_boot_profile }}"
+  register: network_boot_profile_file
+  when:
+    - not ansible_check_mode
+    - network_effective_apply in ['boot', 'boot_pending']
+
+- name: The boot migration is ready
+  ansible.builtin.assert:
+    that:
+      - network_ifupdown_loopback.rc != 0
+      - network_boot_profile_file.stat.exists
+      - network_boot_profile_file.stat.mode == '0600'
+      - "'default via' in network_route_after.stdout"
+    fail_msg: >-
+      {{ inventory_hostname }}: the boot migration is not ready. The active
+      ifupdown file still names {{ network_handover_devices[0] }}, the
+      NetworkManager keyfile is missing or not 0600, or the running link lost its
+      default route. Read `{{ network_ifupdown_file }}` and
+      `{{ network_boot_profile }}`.
+  when:
+    - not ansible_check_mode
+    - network_effective_apply in ['boot', 'boot_pending']
+
+- name: The Wi-Fi regulatory domain is declared
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible; do not edit.
+      # SPDX-License-Identifier: AGPL-3.0-or-later
+      #
+      # The radio's channels are the site's: empty keeps the driver's world
+      # domain, a two-letter code narrows it to the country.
+      options cfg80211 ieee80211_regdom={{ network_regulatory_domain }}
+    dest: /etc/modprobe.d/70-workstation-regulatory.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: network_regulatory_domain | length > 0
+
+- name: A regulatory declaration the product no longer has a code for is withdrawn
+  ansible.builtin.file:
+    path: /etc/modprobe.d/70-workstation-regulatory.conf
+    state: absent
+  when: network_regulatory_domain | length == 0
+
+# --- retire a plaintext Wi-Fi key -------------------------------------------
+#
+# The installer stores the passphrase in `/etc/network/interfaces`; an older
+# converge may have copied it into the NetworkManager keyfile or the supplicant
+# file. The derived key is what the radio uses, so every file that still carries
+# the passphrase is rewritten with it. The helper reports per file and never
+# prints a value.
+- name: The files that may carry a Wi-Fi key are listed
+  ansible.builtin.find:
+    paths: "{{ network_wpa_psk_search_paths }}"
+    patterns: "{{ network_wpa_psk_search_patterns }}"
+    file_type: file
+  register: network_psk_files
+
+- name: The Wi-Fi passphrase is retired from every file that carried it
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    argv: "{{ ['python3', network_wpa_psk_helper]
+                + (network_psk_files.files | map(attribute='path') | list) }}"
+  register: network_psk_retired
+  changed_when: "' hashed' in network_psk_retired.stdout"
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - network_psk_files.files | default([]) | length > 0
+
+- name: Every Wi-Fi key file carries the derived key
+  ansible.builtin.assert:
+    that:
+      - "'no-ssid' not in (network_psk_retired.stdout | default(''))"
+    fail_msg: >-
+      {{ inventory_hostname }}: a file carries a Wi-Fi key but no ssid beside
+      it, so the key cannot be derived:
+      {{ network_psk_retired.stdout_lines | default([])
+         | select('search', 'no-ssid') | list }}. Declare the radio in the
+      site's vault, or fix the file on the console.
+  when:
+    - not ansible_check_mode
+    - network_psk_files.files | default([]) | length > 0

@@ -1,0 +1,148 @@
+---
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (for example v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the Scripts interpreter
+        run: |
+          curl -fsSL -o /tmp/scripts.tar.gz \
+            https://github.com/benmoussa-younes/scripts/releases/download/v0.1.2/scripts_0.1.2_linux-x64.tar.gz
+          echo "db1b23ffa5c3baea6294f9b1f2f36a0d3b8dd9dd8646ffe95dc3dc9c9bb9214f  /tmp/scripts.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/scripts.tar.gz -C /tmp
+          sudo install /tmp/scripts-0.1.2/scripts /usr/local/bin/scripts
+          scripts --version
+
+      - name: Install Ansible and the linters
+        run: |
+          pipx install "ansible-core==2.21.*"
+          pipx install "ansible-lint==26.11.0"
+          pipx install "yamllint==1.37.1"
+          pipx install "reuse==5.0.2"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify the tag is signed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ref="$(gh api "repos/$GH_REPO/git/ref/tags/$TAG")"
+          type="$(printf '%s' "$ref" | jq -r '.object.type')"
+          object="$(printf '%s' "$ref" | jq -r '.object.sha')"
+          test "$type" = "tag"
+          verified="$(gh api "repos/$GH_REPO/git/tags/$object" --jq '.verification.verified')"
+          test "$verified" = "true"
+
+      - name: Prepare the collection path for ansible-test
+        run: |
+          mkdir -p /tmp/ansible_collections/benmoussa
+          cp -a "$GITHUB_WORKSPACE" /tmp/ansible_collections/benmoussa/workstation
+          rm -rf /tmp/ansible_collections/benmoussa/workstation/.git \
+                 /tmp/ansible_collections/benmoussa/workstation/dist \
+                 /tmp/ansible_collections/benmoussa/workstation/.ansible
+
+      - name: Ansible sanity tests
+        working-directory: /tmp/ansible_collections/benmoussa/workstation
+        run: ansible-test sanity --python 3.13
+
+      - name: Ansible lint on the whole repository
+        run: ansible-lint
+
+      - name: Check the repository scripts
+        run: |
+          scripts check tools/scripts/binaries/gate.scs
+          scripts check tools/scripts/binaries/release.scs
+          scripts check tools/scripts/binaries/verify-release.scs
+
+      - name: Gate
+        run: scripts run tools/scripts/binaries/gate.scs
+
+      - name: Verify tag matches VERSION
+        run: test "$(cat VERSION)" = "${TAG#v}"
+
+      - name: Build release assets
+        run: scripts run tools/scripts/binaries/release.scs --ci
+
+      - name: Verify release assets
+        run: scripts run tools/scripts/binaries/verify-release.scs
+
+      - name: Extract the changelog section
+        run: |
+          version="$(cat VERSION)"
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          if-no-files-found: error
+          path: |
+            dist/*
+            release-notes.md
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" \
+              --verify-tag \
+              --title "Workstation Edition ${TAG}" \
+              --notes-file dist/release-notes.md \
+              dist/*
+          fi

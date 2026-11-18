@@ -1,0 +1,425 @@
+---
+# The declared applications: the packages, the desktop entries and the shell
+# extensions. Every claim is read back -- a package that installed and a desktop
+# entry that resolves are two different facts, and the dash needs the second.
+
+# The product owns the browser. It adds Mozilla's pinned APT repository,
+# purges Debian's `firefox-esr` (a different browser with a different profile),
+# then installs Mozilla's `firefox`. The site does not configure the repository.
+#
+# Read BEFORE the install, so check mode can report a substitute on the real
+# machine while the real run purges it.
+- name: Whether the substituted browser is installed is read
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ applications_forbidden_browser }}
+  register: applications_forbidden_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The substituted browser will be purged
+  ansible.builtin.debug:
+    msg: "{{ applications_forbidden_browser }} is installed and will be purged"
+  when:
+    - ansible_check_mode
+    - applications_forbidden_state.stdout | default('') | trim == 'installed'
+
+- name: The Mozilla keyring directory exists
+  ansible.builtin.file:
+    path: "{{ applications_mozilla_key_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The Mozilla signing key is downloaded
+  ansible.builtin.get_url:
+    url: "{{ applications_mozilla_key_url }}"
+    dest: "{{ applications_mozilla_key_path }}"
+    checksum: "{{ applications_mozilla_key_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: applications_mozilla_key
+
+- name: The Mozilla signing key fingerprint is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: gpg --batch --show-keys --with-colons {{ applications_mozilla_key_path }}
+  register: applications_mozilla_key_read
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The Mozilla signing key is the pinned one
+  ansible.builtin.assert:
+    that:
+      - applications_mozilla_key_fingerprint in applications_mozilla_key_read.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: the key at {{ applications_mozilla_key_path }}
+      does not carry the pinned fingerprint
+      {{ applications_mozilla_key_fingerprint }}. Refusing to add a repository
+      signed by another key.
+  when: not ansible_check_mode
+
+- name: The Mozilla APT repository is declared
+  ansible.builtin.template:
+    src: mozilla.list.j2
+    dest: "{{ applications_mozilla_repo_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: applications_mozilla_repo
+
+# A site that enabled Mozilla's repository by hand may have a second source
+# file. The product owns the repository now; retire every other file that names
+# packages.mozilla.org so apt does not see the same archive twice.
+- name: The Mozilla source files already present are listed
+  ansible.builtin.find:
+    paths: "{{ applications_mozilla_repo_file | dirname }}"
+    patterns: "*.list,*.sources"
+    contains: "packages.mozilla.org"
+  register: applications_mozilla_sources
+
+- name: The Mozilla source files this product does not own are retired
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ applications_mozilla_sources.files
+            | rejectattr('path', 'equalto', applications_mozilla_repo_file)
+            | list }}"
+  when: not ansible_check_mode
+  register: applications_mozilla_old_removed
+
+- name: The Mozilla APT repository is refreshed
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - not ansible_check_mode
+    - applications_mozilla_key.changed
+      or applications_mozilla_repo.changed
+      or (applications_mozilla_old_removed.changed | default(false))
+
+# A fresh Debian carries only `firefox-esr`; the product adds Mozilla's repo
+# above. In check mode on a host where the repo was not yet written, the package
+# is not in the cache: report the repo change and skip the browser simulation,
+# rather than fail a dry run.
+#
+# The presence of a candidate is read from `apt-cache madison`, never from the
+# exit code: `apt-cache show` on an unknown package answers rc=0 with an EMPTY
+# output (measured on desktop, 2026-11-11), so a return code cannot tell a
+# missing candidate from a present one. `madison` prints its table only when a
+# candidate exists, and LC_ALL=C keeps the read out of the site's locale.
+- name: The Mozilla Firefox package is available
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: apt-cache madison {{ applications_browser }}
+  environment:
+    LC_ALL: C
+  register: applications_firefox_package
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: applications_assert_firefox | bool
+
+- name: The Mozilla Firefox candidate is decided
+  ansible.builtin.set_fact:
+    applications_firefox_available: >-
+      {{ (applications_firefox_package.stdout | default('') | trim | length > 0)
+         if applications_assert_firefox | bool else false }}
+
+- name: The Mozilla Firefox repository is declared
+  ansible.builtin.assert:
+    that:
+      - applications_firefox_available | bool
+    fail_msg: >-
+      {{ inventory_hostname }} has no `{{ applications_browser }}` candidate in
+      apt after the Mozilla repository is declared. The pinned repository or
+      its key is wrong; check {{ applications_mozilla_repo_file }} and
+      {{ applications_mozilla_key_path }}.
+  when:
+    - applications_assert_firefox | bool
+    - not ansible_check_mode
+
+# A fresh Debian ships no mimeapps.list; the default handler for a type is then
+# whichever application last claimed it. Declared once, for every account.
+- name: The default application handlers are declared
+  ansible.builtin.template:
+    src: mimeapps.list.j2
+    dest: "{{ applications_mimeapps_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: The declared applications are installed
+  ansible.builtin.apt:
+    name: "{{ applications_packages | reject('equalto', applications_browser) | list }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The declared browser is installed
+  ansible.builtin.apt:
+    name: "{{ applications_browser }}"
+    state: present
+    cache_valid_time: 3600
+  when: not ansible_check_mode or applications_firefox_available | bool
+
+# Mozilla's build ships telemetry and studies enabled. The product refuses both
+# before the first profile exists; the read-back proves the declaration reached
+# the file Firefox reads. The Firefox account is the user's own: the policy does
+# **not** set `DisableFirefoxAccounts`, so a user can sign in and sync if they
+# choose to.
+- name: The Firefox policy directory exists
+  ansible.builtin.file:
+    path: /etc/firefox/policies
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Firefox's telemetry and studies are disabled
+  ansible.builtin.copy:
+    content: |
+      {
+        "policies": {
+          "DisableTelemetry": true,
+          "DisableFirefoxStudies": true,
+          "DisablePocket": true,
+          "DisableFeedbackCommands": true,
+          "DontCheckDefaultBrowser": true,
+          "NoDefaultBookmarks": true
+        }
+      }
+    dest: /etc/firefox/policies/policies.json
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Firefox's telemetry policy is present
+  ansible.builtin.command:
+    cmd: >-
+      grep -q '"DisableTelemetry": true'
+      /etc/firefox/policies/policies.json
+  changed_when: false
+  when: not ansible_check_mode
+
+# The account is the user's choice. A future edit that re-adds the key must fail
+# here rather than silently block sign-in and sync.
+- name: Whether Firefox Accounts is disabled is read
+  ansible.builtin.command:
+    cmd: >-
+      grep -c '"DisableFirefoxAccounts": true'
+      /etc/firefox/policies/policies.json
+  register: applications_firefox_accounts
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Firefox account sign-in is not disabled
+  ansible.builtin.assert:
+    that:
+      - applications_firefox_accounts.stdout | trim == '0'
+    fail_msg: >-
+      {{ inventory_hostname }}: /etc/firefox/policies/policies.json sets
+      `DisableFirefoxAccounts`, so a user cannot sign in to their Firefox
+      account. The product refuses telemetry and studies, not the user's own
+      account.
+  when: not ansible_check_mode
+
+# VSCodium is no longer an application default. The developer role owns it
+# through the `vscodium` group; a host that does not select that group must
+# converge to "not installed", including the repository the old role added.
+- name: Whether VSCodium is selected is known
+  ansible.builtin.set_fact:
+    applications_vscodium_selected: >-
+      {{ 'vscodium' in (developer_tools | default([])) }}
+
+- name: The retired VSCodium package is absent
+  ansible.builtin.apt:
+    name: "{{ applications_retired_vscodium_package }}"
+    state: absent
+    purge: true
+    autoremove: false
+  when:
+    - not applications_vscodium_selected | bool
+    - not ansible_check_mode
+
+- name: The retired VSCodium repository is absent
+  ansible.builtin.file:
+    path: "{{ applications_retired_vscodium_repo_file }}"
+    state: absent
+  when: not applications_vscodium_selected | bool
+
+- name: The retired VSCodium key is absent
+  ansible.builtin.file:
+    path: "{{ applications_retired_vscodium_key_path }}"
+    state: absent
+  when: not applications_vscodium_selected | bool
+
+# Ptyxis is the declared terminal; `gnome-core` accepts xdg-terminal-exec for
+# its terminal alternative and Ptyxis depends on it. The duplicate terminal and
+# its Nautilus extension are retired after Ptyxis is installed.
+- name: The duplicate GNOME terminal is retired
+  ansible.builtin.apt:
+    name:
+      - gnome-terminal
+      - gnome-terminal-data
+      - nautilus-extension-gnome-terminal
+    state: absent
+    autoremove: false
+  when:
+    - applications_retire_gnome_terminal | bool
+    - not ansible_check_mode
+
+- name: The terminal command is the declared one
+  ansible.builtin.stat:
+    path: /usr/bin/xdg-terminal-exec
+  register: applications_xdg_terminal
+  when:
+    - applications_retire_gnome_terminal | bool
+    - not ansible_check_mode
+
+- name: The duplicate GNOME terminal is absent
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: dpkg-query -W -f='${db:Status-Status}' gnome-terminal
+  register: applications_gnome_terminal_after
+  changed_when: false
+  failed_when: false
+  when:
+    - applications_retire_gnome_terminal | bool
+    - not ansible_check_mode
+
+- name: The duplicate GNOME terminal is gone and a terminal remains
+  ansible.builtin.assert:
+    that:
+      - applications_xdg_terminal.stat.exists
+      - applications_gnome_terminal_after.stdout | trim != 'installed'
+    fail_msg: >-
+      {{ inventory_hostname }} has no {{ applications_xdg_terminal.stat.path }}
+      or still carries gnome-terminal. Ptyxis must be installed before the
+      duplicate terminal is retired.
+  when:
+    - applications_retire_gnome_terminal | bool
+    - not ansible_check_mode
+
+- name: The declared desktop entries are read
+  ansible.builtin.stat:
+    path: "{{ applications_desktop_dir }}/{{ item }}"
+  loop: "{{ applications_favorite_desktops }}"
+  loop_control:
+    label: "{{ item }}"
+  register: applications_desktop_entries
+  when: not ansible_check_mode
+
+# A favorite with no desktop entry is a hole in the dash, and GNOME reports it
+# only in the session's journal. The `dconf` role pins these ids; this is the
+# check that they resolve to an installed application.
+- name: The media player's desktop entry is read
+  ansible.builtin.stat:
+    path: "{{ applications_desktop_dir }}/vlc.desktop"
+  register: applications_media_desktop
+  when: not ansible_check_mode
+
+- name: The default media player has a desktop entry
+  ansible.builtin.assert:
+    that:
+      - applications_media_desktop.stat.exists
+    fail_msg: >-
+      {{ inventory_hostname }} has no {{ applications_desktop_dir }}/vlc.desktop.
+      The `vlc` package is in `applications_packages`; the MIME defaults point
+      at `vlc.desktop`, so the package must install that entry.
+  when: not ansible_check_mode
+
+- name: Every declared favorite has a desktop entry
+  ansible.builtin.assert:
+    that:
+      - >-
+        applications_desktop_entries.results
+        | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no desktop entry for
+      {{ applications_desktop_entries.results
+         | rejectattr('stat.exists') | map(attribute='item') | list }} under
+      {{ applications_desktop_dir }}. The packages this role declares are
+      `{{ applications_packages | join(', ') }}`; check which one is missing
+      before the `dconf` role pins the entry.
+  when: not ansible_check_mode
+
+# The post-conditions, on the real package state: check mode only simulates the
+# repository and the install, so the answers would describe the machine as it
+# was.
+- name: The declared browser's state is read
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ applications_browser }}
+  register: applications_browser_state
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The declared browser is installed
+  ansible.builtin.assert:
+    that:
+      - applications_browser_state.stdout | trim == 'installed'
+    fail_msg: >-
+      {{ inventory_hostname }} has no `{{ applications_browser }}`
+      (dpkg answers `{{ applications_browser_state.stdout | trim }}`). The
+      package comes from Mozilla's repository; Debian's archive carries only
+      `{{ applications_forbidden_browser }}`, which this product purges.
+  when:
+    - applications_assert_firefox | bool
+    - not ansible_check_mode
+
+# Only after Mozilla's browser is installed and read back: a failed key, repo
+# or package leaves the machine with its existing browser instead of none.
+- name: The substituted browser is purged
+  ansible.builtin.apt:
+    name: "{{ applications_forbidden_browser }}"
+    state: absent
+    purge: true
+  when:
+    - not ansible_check_mode
+    - applications_browser_state.stdout | default('') | trim == 'installed'
+
+- name: The substituted browser's state after the purge is read
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ applications_forbidden_browser }}
+  register: applications_forbidden_after
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The substituted browser is absent after the purge
+  ansible.builtin.assert:
+    that:
+      - applications_forbidden_after.stdout | default('') | trim != 'installed'
+    fail_msg: >-
+      {{ inventory_hostname }} still carries `{{ applications_forbidden_browser }}`
+      after the purge. This product's browser is `{{ applications_browser }}`,
+      Mozilla's build; the ESR is a different browser with a different profile.
+  when: not ansible_check_mode
+
+# `gnome-extensions list` needs a GNOME Shell session: as root over SSH it
+# answers `[]` even when the packages are installed (measured on the proof host,
+# 2026-10-26). The converge therefore proves the INSTALLED extension directory,
+# which is what the packages create; the session-level list is the post-login
+# proof in the README.
+- name: The declared shell extension directories are read
+  ansible.builtin.stat:
+    path: "{{ applications_extension_dir }}/{{ item }}"
+  loop: "{{ applications_extension_uuids }}"
+  loop_control:
+    label: "{{ item }}"
+  register: applications_extension_dirs
+  when: not ansible_check_mode
+
+- name: The declared shell extensions are installed
+  ansible.builtin.assert:
+    that:
+      - >-
+        applications_extension_dirs.results
+        | rejectattr('stat.isdir') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no extension directory for
+      {{ applications_extension_dirs.results | rejectattr('stat.isdir')
+         | map(attribute='item') | list }} under
+      {{ applications_extension_dir }}. The `gnome-shell-extension-*` packages
+      provide them; the `dconf` role enables the same three UUIDs. The
+      session-level `gnome-extensions list` is checked after login.
+  when: not ansible_check_mode

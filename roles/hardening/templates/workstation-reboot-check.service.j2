@@ -1,0 +1,9 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Signal a required reboot (new kernel installed)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart={{ hardening_reboot_check_script }}

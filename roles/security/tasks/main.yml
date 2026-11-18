@@ -1,0 +1,540 @@
+---
+# The SSH source restriction is DECIDED, not defaulted: an empty
+# list would otherwise render `tcp dport 22 accept` from anywhere, silently.
+- name: The SSH source restriction is decided
+  ansible.builtin.assert:
+    that:
+      - (security_ssh_sources | length > 0) or (security_ssh_sources_anywhere | bool)
+    fail_msg: >-
+      security_ssh_sources is empty on {{ inventory_hostname }}: the firewall
+      would accept sshd connections from anywhere, silently. Declare this product's
+      networks, or set security_ssh_sources_anywhere: true to accept that
+      deliberately.
+  when: security_ssh_sources_required | bool
+
+# The SSH port is the link the play itself uses on a remote host. Moving it from
+# that session would cut the only path back, so a change is a CONSOLE operation:
+# `ansible_connection=local` (or an already matching `ansible_port`) is the only
+# way through. The default 22 therefore stays usable from SSH.
+- name: The SSH port change is a console operation
+  ansible.builtin.assert:
+    that:
+      - >-
+        (security_ssh_port | int) == (ansible_port | default(22) | int)
+        or ansible_connection == 'local'
+    fail_msg: >-
+      {{ inventory_hostname }}: changing security_ssh_port from
+      {{ ansible_port | default(22) }} to {{ security_ssh_port }} over SSH would
+      cut the session this play runs on. Apply it from the console, or from a
+      connection already using the new port.
+
+# The machine account exists to log in. Its group is added to the allowlist
+# when the account model declares it; a site that wants the account but not its
+# login path sets `accounts_machine_mode: none`.
+- name: The machine account's group is read
+  ansible.builtin.command:
+    cmd: "getent group {{ accounts_machine.group }}"
+  register: security_machine_group
+  changed_when: false
+  failed_when: false
+  when: (accounts_machine_mode | default('none')) == 'machine'
+
+- name: The machine account's group exists before it is allowlisted
+  ansible.builtin.assert:
+    that:
+      - security_machine_group.rc == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: accounts_machine_mode is `machine` but the group
+      `{{ accounts_machine.group }}` does not exist. Run the `accounts` role
+      first, or declare `accounts_machine_mode: none`.
+  when: (accounts_machine_mode | default('none')) == 'machine'
+
+- name: The groups allowed to log in are computed
+  ansible.builtin.set_fact:
+    security_sshd_allow_groups_effective: >-
+      {{ (security_sshd_allow_groups
+          + ([accounts_machine.group]
+             if (accounts_machine_mode | default('none')) == 'machine' else []))
+         | unique }}
+
+# `AllowGroups` is applied before the role restarts sshd. An account outside
+# every allowed group would lose its only remote path on that restart, so the
+# precondition is read and refused, not discovered after the session is cut.
+- name: The account's groups are read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: id -nG {{ workstation_user }}
+  register: security_account_groups
+  changed_when: false
+  check_mode: false
+
+- name: The account is in an allowed SSH group
+  ansible.builtin.assert:
+    that:
+      - >-
+        security_sshd_allow_groups_effective
+        | intersect(security_account_groups.stdout.split()) | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ workstation_user }} is in
+      {{ security_account_groups.stdout.split() }}, none of which is in
+      security_sshd_allow_groups_effective
+      ({{ security_sshd_allow_groups_effective }}). sshd would refuse the only
+      remote account after the restart.
+
+- name: The nftables drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ security_nftables_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The product nftables table is declared
+  ansible.builtin.template:
+    src: nftables-workstation.nft.j2
+    dest: "{{ security_nftables_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  register: security_ruleset_declaration
+
+# The site's /etc/nftables.conf is loaded first, then this file. Clearing
+# ExecStart is the systemd way to replace a unit's command list; the resulting
+# unit has two ordered oneshot commands. It is re-read at the next boot and
+# after the daemon-reload below.
+- name: The nftables unit's drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ security_nftables_service_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The nftables unit loads the product table after the site file
+  ansible.builtin.template:
+    src: nftables-service.conf.j2
+    dest: "{{ security_nftables_service_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: security_nftables_unit
+
+# `ufw` is a second writer on the same kernel state: its own chains run beside
+# ours, its rules are invisible to this role, and a removal there can never be
+# seen here. Two firewalls is not a defence in depth, it is an undecided policy.
+# The role therefore retires it -- after our table is in place, so the machine is
+# never unfirewalled -- and records what it did.
+- name: Whether a superseded firewall is active is known
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: security_ufw_present
+
+- name: The superseded firewall's state is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: /usr/sbin/ufw status
+  register: security_ufw_status
+  changed_when: false
+  failed_when: false
+  when:
+    - security_ufw_present.stat.exists
+    - security_retire_ufw | bool
+    - not ansible_check_mode
+
+- name: The superseded firewall is disabled
+  ansible.builtin.command:
+    cmd: /usr/sbin/ufw --force disable
+  when:
+    - security_ufw_present.stat.exists
+    - security_retire_ufw | bool
+    - not ansible_check_mode
+    - "'Status: active' in security_ufw_status.stdout"
+  changed_when: true
+  failed_when: false
+
+- name: The superseded firewall does not start again
+  ansible.builtin.systemd_service:
+    name: ufw
+    enabled: false
+  when:
+    - security_ufw_present.stat.exists
+    - security_retire_ufw | bool
+    - not ansible_check_mode
+
+- name: The firewall is enabled
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    daemon_reload: true
+  # The ruleset is complete, so enabling it cannot lock anyone out: SSH from the
+  # declared sources is in the file, `established,related` covers the session in
+  # progress, and an empty source list allows SSH from anywhere.
+  #
+  # `daemon_reload` picks up the unit drop-in that orders the site file before
+  # the product table. The unit is NOT restarted: its ExecStop flushes the whole
+  # ruleset, which would wipe another manager's chains.
+  #
+  # In check mode `nftables` may not be installed yet (the baseline install is
+  # only reported there), and naming a unit systemd does not know fails the dry
+  # run -- the same reason the timers below are guarded.
+  when: not ansible_check_mode
+
+# --- the LIVE ruleset, against the one this product applied --------------------
+#
+# The template reports a change only when the FILE changes. A ruleset that was
+# changed behind this product's back -- two `:53` rules deleted by hand, the case
+# the DNS audit reproduced on 2026-10-07 -- therefore kept converging to
+# `changed=0` while the live firewall no longer matched the declaration.
+#
+# WHY AN APPLIED SNAPSHOT, and not a comparison with the file: the declaration
+# cannot be compared with a live listing as TEXT. nft prints its own canonical
+# form (`iif "lo"`, network predicates before transport ones, `policy drop` with
+# the hook priority), and the only way to get the declaration into that form is
+# to load it -- which is the very act we are trying to avoid on every converge.
+# So the role remembers the ruleset it last APPLIED, taken from the same command
+# that reads the live one, and compares like with like. A difference means the
+# live ruleset is no longer this product's, and it is put back.
+- name: The live inbound ruleset is read
+  ansible.builtin.command:
+    cmd: "/usr/sbin/nft list table inet {{ security_firewall_table }}"
+  register: security_live_ruleset
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The ruleset this product last applied is read
+  ansible.builtin.command:
+    cmd: "/bin/cat {{ security_ruleset_snapshot }}"
+  register: security_ruleset_applied
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: not ansible_check_mode
+
+# An EMPTY live read counts as drift on its own: nft answers nothing when the
+# table is absent, and an absent table must never be mistaken for "nothing to do".
+#
+# The comparison TRIMS both sides and NORMALISES COUNTERS. `nft list` prints the
+# packet and byte counts of every `counter` rule, and those counts move with
+# traffic: comparing them made a correct ruleset look changed on the next login.
+# The counters are still live and still counted; only their value is removed from
+# the comparison and from the remembered snapshot.
+- name: The compared rulesets are normalised
+  ansible.builtin.set_fact:
+    security_live_ruleset_normalised: >-
+      {{ security_live_ruleset.stdout | default('')
+         | regex_replace('counter packets [0-9]+ bytes [0-9]+', 'counter') }}
+    security_ruleset_applied_normalised: >-
+      {{ security_ruleset_applied.stdout | default('')
+         | regex_replace('counter packets [0-9]+ bytes [0-9]+', 'counter') }}
+  when: not ansible_check_mode
+
+- name: Whether the live ruleset is still the one this product applied is known
+  ansible.builtin.set_fact:
+    security_ruleset_drifted: >-
+      {{ security_ruleset_declaration.changed | default(false) | bool
+         or (security_live_ruleset_normalised | trim | length == 0)
+         or ((security_live_ruleset_normalised | trim)
+             != (security_ruleset_applied_normalised | trim)) }}
+  when: not ansible_check_mode
+
+- name: A live ruleset that is not the one this product applied is put back
+  ansible.builtin.command:
+    cmd: "/usr/sbin/nft -f {{ security_nftables_file }}"
+  when:
+    - not ansible_check_mode
+    - security_ruleset_drifted | bool
+  changed_when: true
+
+- name: The ruleset that is live now is read
+  ansible.builtin.command:
+    cmd: "/usr/sbin/nft list table inet {{ security_firewall_table }}"
+  register: security_ruleset_now
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - security_ruleset_drifted | bool
+
+- name: The directory the applied ruleset is remembered in exists
+  ansible.builtin.file:
+    path: "{{ security_ruleset_snapshot | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: not ansible_check_mode
+
+# WRITTEN ONLY AFTER A LOAD, and that is the whole point. The first version wrote
+# the live ruleset on EVERY converge -- so a converge that found a drifted table
+# recorded the DRIFT as "what this product applied", and every later converge agreed
+# with it: the drift became invisible for good. Found by the drill on 2026-10-10,
+# which is what the drill is for. The snapshot is now a record of a LOAD, and the
+# declaration's own `changed` is one of the reasons to load.
+#
+# It reports no change of its own: the load reported the change.
+- name: The ruleset this product applied is remembered
+  ansible.builtin.copy:
+    content: >-
+      {{ security_ruleset_now.stdout | default(security_live_ruleset.stdout)
+         | regex_replace('counter packets [0-9]+ bytes [0-9]+', 'counter') }}
+    dest: "{{ security_ruleset_snapshot }}"
+    owner: root
+    group: root
+    mode: "0600"
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - security_ruleset_drifted | bool
+
+- name: The sshd hardening drop-in is in place
+  ansible.builtin.template:
+    src: sshd-security.conf.j2
+    dest: /etc/ssh/sshd_config.d/60-security.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Restart sshd
+
+# sshd reads `sshd_config.d` in NAME order and the FIRST value of a directive
+# wins. A `90-*.conf` left by another tool therefore overrides this role's
+# `60-security.conf` for every directive it repeats -- measured on a converted
+# machine (2026-10-20), where an older `90-` drop-in was still read before this
+# one. The declaration is the whole policy here, so a file this role does not
+# declare is retired -- renamed, never deleted.
+- name: The sshd drop-ins already present are listed
+  ansible.builtin.find:
+    paths: /etc/ssh/sshd_config.d
+    patterns: "*.conf"
+    file_type: file
+  register: security_sshd_existing
+
+- name: The sshd drop-ins this role and the crypto role declare are kept
+  # Two roles write here: this one declares the POLICY (auth, forwarding,
+  # access), `crypto` declares the ALGORITHMS. Neither may retire the other's
+  # file, so both are named.
+  ansible.builtin.set_fact:
+    security_sshd_declared:
+      - /etc/ssh/sshd_config.d/60-security.conf
+      - /etc/ssh/sshd_config.d/50-crypto.conf
+
+# Only a file NO PACKAGE owns is retired: a distribution drop-in is not this
+# role's to remove, and a package would restore it on its next upgrade.
+- name: The sshd drop-ins are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ security_sshd_existing.files | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('in', security_sshd_declared)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: security_sshd_owner
+  changed_when: false
+  failed_when: false
+
+- name: The sshd drop-ins no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: "{{ security_sshd_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+  notify: Restart sshd
+
+- name: The sshd configuration is valid
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -t
+  changed_when: false
+
+- name: The effective sshd configuration is read
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: security_sshd_effective
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: The SSH daemon listens on the declared port
+  ansible.builtin.assert:
+    that:
+      - "'port ' ~ security_ssh_port in security_sshd_effective.stdout"
+    fail_msg: >-
+      {{ inventory_hostname }}: sshd -T does not report
+      `port {{ security_ssh_port }}`. The firewall and sshd would disagree.
+  when: not ansible_check_mode
+
+- name: The sshd hardening is applied now
+  ansible.builtin.meta: flush_handlers
+
+- name: The password quality policy is installed
+  ansible.builtin.apt:
+    name: libpam-pwquality
+    state: present
+    cache_valid_time: 3600
+
+- name: The password quality policy is declared
+  ansible.builtin.template:
+    src: pwquality.conf.j2
+    dest: /etc/security/pwquality.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: The PAM password stack is known
+  ansible.builtin.command:
+    cmd: grep -q pam_pwquality /etc/pam.d/common-password
+  register: security_pam_pwquality
+  changed_when: false
+  failed_when: false
+
+- name: PAM enforces the password quality policy
+  ansible.builtin.command:
+    cmd: pam-auth-update --enable pwquality
+  when: security_pam_pwquality.rc != 0
+  changed_when: true # it ran because the module was not enabled, so it changed PAM
+
+- name: The password ageing policy is declared
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^{{ item.key }}"
+    line: "{{ item.key }}\t{{ item.value }}"
+    state: present
+  loop:
+    - { key: PASS_MAX_DAYS, value: "{{ security_password_max_days }}" }
+    - { key: PASS_MIN_DAYS, value: "{{ security_password_min_days }}" }
+    - { key: PASS_WARN_AGE, value: "{{ security_password_warn_days }}" }
+
+# Keys that are NOT login.defs(5) settings. an earlier release wrote `SHA_CRYPT_ROUNDS` as a
+# yescrypt work factor, and login.defs(5) has no such key: yescrypt's cost is
+# `YESCRYPT_COST_FACTOR`, and `SHA_CRYPT_MIN_ROUNDS`/`SHA_CRYPT_MAX_ROUNDS` apply
+# only to SHA-256/SHA-512. Every shadow tool that read the file therefore warned
+# -- `shadow: unknown configuration item 'SHA_CRYPT_ROUNDS'` -- and the value
+# changed no hash. `INACTIVE` is the server product's former key: this product
+# never wrote it, but a host converted from a server base can still carry it and
+# it warns the same way.
+#
+# Both are retired, not replaced: libxcrypt's default yescrypt cost stands, and
+# inactivity is a shadow field, not a workstation policy. Removal is also what
+# cleans a host that already ran that release; a declaration that merely stopped
+# writing would leave the line, and its warning, in place for ever.
+- name: The keys that are not login.defs settings are removed
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    # an earlier release wrote a space-separated key; `INACTIVE` is a shadow field and a
+    # converted host carries it as `INACTIVE=`. Both spellings are retired, and
+    # a lookalike such as `INACTIVE_BACKUP` is left alone.
+    regexp: '^{{ item }}(\s|=)'
+    state: absent
+  loop:
+    - SHA_CRYPT_ROUNDS
+    - INACTIVE
+
+# The file is read by the shadow tools, not by this role: `useradd -D` prints its
+# defaults from login.defs and writes the same warning to stderr. Reading it here
+# turns a future invalid key into a failed converge instead of a journal line.
+#
+# It is an assertion on the WRITE above, so it runs only in a real converge:
+# `--check` simulates the retire, and the probe would then read the key it is
+# about to remove and fail a dry run that writes nothing.
+- name: Login.defs is read without a warning
+  ansible.builtin.command:
+    cmd: /usr/sbin/useradd -D
+  register: security_login_defs_probe
+  changed_when: false
+  failed_when: >-
+    security_login_defs_probe.rc != 0
+    or (security_login_defs_probe.stderr | trim | length > 0)
+  when: not ansible_check_mode
+
+# Brute-force lockout. pam_faillock through Debian's
+# pam-auth-update, as two profiles: `preauth` before pam_unix, `authfail`/
+# `authsucc` after. The lockout covers console login and sudo alike.
+- name: The faillock profiles are declared
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: faillock-preauth-pam-config.j2, dest: "/usr/share/pam-configs/workstation-faillock-preauth" }
+    - { src: faillock-pam-config.j2, dest: "{{ security_faillock_pam_config }}" }
+
+- name: The lockout thresholds are declared
+  ansible.builtin.lineinfile:
+    path: "{{ security_faillock_conf }}"
+    regexp: "^#?\\s*{{ item.key }}\\s*="
+    line: "{{ item.key }} = {{ item.value }}"
+  loop:
+    - { key: deny, value: "{{ security_faillock_deny }}" }
+    - { key: unlock_time, value: "{{ security_faillock_unlock_time }}" }
+
+- name: The lockout is silent to the attacker
+  ansible.builtin.lineinfile:
+    path: "{{ security_faillock_conf }}"
+    regexp: "^#?\\s*silent\\s*$"
+    line: "silent"
+
+# `--enable` is declarative and cheap; running it only when `preauth` was
+# absent left a host with `preauth` but without `authfail`, so a failed login
+# was counted and never denied. The condition therefore tests BOTH lines, and the
+# task reports the change it makes: `changed_when: false` on a command that
+# rewrites the PAM stack would hide a real edit. The read-back below checks every
+# line the two profiles contribute.
+- name: The PAM authentication stack is read before the lockout is declared
+  ansible.builtin.slurp:
+    src: /etc/pam.d/common-auth
+  register: security_pam_auth_before
+  when: not ansible_check_mode
+
+- name: PAM enforces the lockout
+  ansible.builtin.command:
+    cmd: pam-auth-update --enable workstation-faillock-preauth workstation-faillock
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - >-
+      'pam_faillock.so preauth' not in (security_pam_auth_before.content | b64decode)
+      or 'pam_faillock.so authfail' not in (security_pam_auth_before.content | b64decode)
+
+- name: The PAM authentication stack is read
+  ansible.builtin.slurp:
+    src: /etc/pam.d/common-auth
+  register: security_pam_auth
+  when: not ansible_check_mode
+
+- name: The PAM account stack is read
+  ansible.builtin.slurp:
+    src: /etc/pam.d/common-account
+  register: security_pam_account
+  when: not ansible_check_mode
+
+- name: PAM enforces the lockout at every stage
+  ansible.builtin.assert:
+    that:
+      - "'pam_faillock.so preauth' in (security_pam_auth.content | b64decode)"
+      - "'pam_faillock.so authfail' in (security_pam_auth.content | b64decode)"
+      - "'pam_faillock.so authsucc' in (security_pam_auth.content | b64decode)"
+      - "'pam_faillock.so' in (security_pam_account.content | b64decode)"
+    fail_msg: >-
+      {{ inventory_hostname }}: the faillock profiles are not all in the PAM
+      stack (preauth/authfail/authsucc in common-auth, the account rule in
+      common-account). Read `pam-auth-update --enable
+      workstation-faillock-preauth workstation-faillock`.
+  when: not ansible_check_mode
+
+# No systemd sandbox on sshd (, superseding 0025). A systemd sandbox
+# on the single `ssh.service` is INHERITED by every session it forks: with
+# `ProtectSystem`, /usr and /etc became READ-ONLY inside SSH sessions, so apt and
+# dpkg failed. Confirmed on a converted host: `systemd-run` outside a session wrote /usr,
+# a session did not. The drop-in is removed, and any host that had it is cleaned.
+- name: No sshd sandbox drop-in is left behind
+  ansible.builtin.file:
+    path: "{{ security_sshd_service_dropin }}"
+    state: absent
+  notify: Restart sshd

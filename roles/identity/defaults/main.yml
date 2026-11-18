@@ -1,0 +1,64 @@
+---
+# The machine identity. The operating system stays Debian; the product names it.
+#
+# The product version is the EDITION's, not the distribution's: `Workstation
+# Edition 0.1.0` says what was installed and what supports it. The
+# technical product id stays `workstation-gnome`; the displayed name does not
+# repeat the desktop's name.
+# The Debian release stays in the fields a package manager reads (`ID`,
+# `ID_LIKE`, `VERSION_CODENAME`), because apt and `dpkg` resolve against it; it
+# is not part of what a human reads.
+# This product is Workstation Edition, GNOME edition. `identity_product` has
+# one accepted value here: a product this file does not ship has nothing to do
+# in its declaration, and naming this desktop `server` would brand it as the
+# wrong product on the login banner, in `/etc/issue` and in os-release.
+#
+# DIVERGENCE FROM the Server collection: the source also names `server` and
+# `container`. Neither is reused: the table holds this product's identity and
+# the schema refuses anything else.
+identity_product: workstation-gnome
+identity_names:
+  workstation-gnome: Workstation Edition
+identity_name: "{{ identity_names[identity_product] }}"
+
+# The edition's own version. It moves when this product is released, never when
+# the distribution is upgraded; it equals `VERSION`, and the release gate
+# asserts the changelog entry that carries it.
+identity_version: "0.1.0"
+
+# The host name this product declares. Empty leaves `/etc/hostname` and the
+# running name untouched: a site that names its machines at install time does
+# not need this, and a generic default cannot invent a name.
+identity_hostname: ""
+
+# The distribution codename this file reports as `VERSION_CODENAME`. Derived
+# from `/etc/debian_version` by the role, never from os-release: that file is
+# this role's own output, and reading it back would make the second run inherit
+# the first run's branding.
+
+# The distribution's dynamic motd directory: `10-uname` prints the kernel line
+# above the product's `/etc/motd`, and `run-parts` skips it without the execute
+# bit.
+identity_update_motd_scripts: /etc/update-motd.d
+
+identity_os_release_file: /usr/lib/os-release
+identity_os_release_divert: /usr/lib/os-release.distrib
+identity_home_url: ""
+identity_support_url: ""
+identity_bug_report_url: ""
+# The login banner. `issue` and `issue.net` end with blank lines (`{{ '' }}`) so
+# the login prompt is never glued to the text: Ansible strips one final newline,
+# so three template lines yield the two blank lines. `/etc/motd` is the footer
+# under the dashboard, followed by one blank line.
+#
+# French: the display is French, like the messages `shell_messages_locale`
+# selects. The product name stays the brand's English form.
+identity_access_warning: |-
+  L'accès non autorisé à cet appareil est interdit.
+  Toute activité peut être journalisée et relève de la politique
+  d'utilisation acceptable de l'organisation.
+
+# After authentication the full notice is already behind the reader: this is
+# the one-line reminder `/etc/motd` carries under the dashboard `shell` renders.
+identity_access_footer: >-
+  Accès autorisé uniquement · toute activité peut être journalisée.

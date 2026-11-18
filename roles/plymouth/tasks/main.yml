@@ -1,0 +1,145 @@
+---
+# The splash, in the order it must happen: the theme exists, the selection names
+# it, the initramfs carries it, and the files say so.
+#
+# Plymouth shows nothing without `splash` on the kernel command line. The
+# `hardening` role declares that option (it owns `/etc/default/grub`); this role
+# reads it and refuses a host where it is missing, rather than editing GRUB a
+# second time.
+
+- name: The Plymouth package that reads the selection is present
+  ansible.builtin.apt:
+    name: "{{ plymouth_package }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The distribution's themes are present
+  ansible.builtin.apt:
+    name: "{{ plymouth_themes_package }}"
+    state: present
+    cache_valid_time: 3600
+  when: plymouth_install_themes | bool
+
+# The theme is a manifest (`workstation.plymouth`), a script (`workstation.script`)
+# and its images. Copied as a tree: the manifest names the script and the image
+# directory by their INSTALLED paths, so a renamed file is a theme that starts
+# and shows nothing.
+- name: The theme directory exists
+  ansible.builtin.file:
+    path: "{{ plymouth_theme_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The Workstation theme is installed
+  ansible.builtin.copy:
+    src: "{{ plymouth_theme_source }}/"
+    dest: "{{ plymouth_theme_dir }}/"
+    owner: root
+    group: root
+    mode: "0644"
+  register: plymouth_theme_install
+
+# A file removed from the source theme does not disappear from an installed
+# tree: `copy` adds and updates, it does not delete. The old static white W was
+# the duplicate behind the rotating emerald badge; retire it from the installed
+# theme too.
+- name: The retired static Plymouth logo is absent
+  ansible.builtin.file:
+    path: "{{ plymouth_theme_dir }}/logo.png"
+    state: absent
+
+- name: The selected theme is declared
+  ansible.builtin.template:
+    src: plymouthd.conf.j2
+    dest: "{{ plymouth_selection_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: plymouth_selection_declared
+  notify: Rebuild the initramfs
+
+# The previous selection is read BEFORE the tool changes it, so the tool runs on
+# a real change only: a converge that finds the theme selected does nothing.
+- name: The previous selection is read
+  # `failed_when: false`: on a check run the package install above is only
+  # REPORTED, so the tool may not exist yet; the empty answer then means "no
+  # selection to compare with", not a broken host.
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: "{{ plymouth_default_theme_tool }}"
+  register: plymouth_selected_before
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+# `plymouth-set-default-theme` is the owner of the selection: it compiles the
+# theme for the initramfs hook and rewrites `plymouthd.conf` from the theme's
+# manifest. Run only where it changes something, and never in check mode.
+- name: The declared theme is selected
+  ansible.builtin.command:
+    cmd: "{{ plymouth_default_theme_tool }} {{ plymouth_theme_name }}"
+  when:
+    - not ansible_check_mode
+    - plymouth_theme_install.changed
+      or plymouth_selection_declared.changed
+      or (plymouth_selected_before.stdout | default('') | trim) != plymouth_theme_name
+  changed_when: true
+  notify: Rebuild the initramfs
+
+# The kernel command line the splash needs. `hardening` owns the file and
+# declares `splash`; a host that lost it shows a text boot, and the theme would
+# look "installed" from every file the role writes.
+- name: The kernel command line of the boot loader is read
+  ansible.builtin.slurp:
+    src: "{{ plymouth_grub_default }}"
+  register: plymouth_grub_read
+  when: not ansible_check_mode
+
+- name: The splash option is on the kernel command line
+  ansible.builtin.assert:
+    that:
+      - plymouth_required_cmdline_option in (plymouth_grub_read.content | b64decode)
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ plymouth_grub_default }}` does not carry
+      `{{ plymouth_required_cmdline_option }}`, so Plymouth starts and paints
+      nothing. Converge `hardening` (its `hardening_kernel_cmdline` declares it)
+      and reboot.
+  when: not ansible_check_mode
+
+- name: The initramfs carries the theme
+  ansible.builtin.meta: flush_handlers
+
+# Read back from what the boot actually reads. The initramfs is a compressed
+# archive: the theme's own manifest inside it is the proof the rebuild took, not
+# the rebuild's exit code.
+- name: The selection is read from Plymouth's own file
+  ansible.builtin.command:
+    cmd: "{{ plymouth_default_theme_tool }}"
+  register: plymouth_selected_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The initramfs is listed
+  ansible.builtin.command:
+    # `lsinitramfs` takes initramfs FILES, not a member filter. Its second
+    # argument was read as another archive (measured on the proof host,
+    # 2026-10-26); the theme is proved from the full listing below.
+    cmd: lsinitramfs /boot/initrd.img-{{ ansible_facts['kernel'] }}
+  register: plymouth_initramfs
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The boot splash is the declared theme
+  ansible.builtin.assert:
+    that:
+      - (plymouth_selected_after.stdout | trim) == plymouth_theme_name
+      - >-
+        (plymouth_theme_dir | regex_replace('^/', '') ~ '/'
+         ~ plymouth_theme_name ~ '.plymouth') in plymouth_initramfs.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: the boot splash is not the declared theme.
+      Plymouth reports `{{ plymouth_selected_after.stdout | default('?') | trim }}`,
+      and the theme manifest must be listed inside the initramfs. A theme that is
+      selected but absent from the initramfs is invisible at boot.
+  when: not ansible_check_mode

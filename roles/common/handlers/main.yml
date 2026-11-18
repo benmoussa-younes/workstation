@@ -1,0 +1,15 @@
+---
+# The withdrawn Bluetooth mask is a unit-file change; systemd must read the
+# directory again before the desktop role can unmask and start the daemon.
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+# The location service is a system daemon started through D-Bus; it re-reads
+# its configuration only at start.
+- name: Restart geoclue
+  ansible.builtin.systemd_service:
+    name: geoclue.service
+    state: restarted
+  when: not ansible_check_mode

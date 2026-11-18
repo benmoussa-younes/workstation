@@ -1,0 +1,20 @@
+# Managed by Ansible; do not edit.
+#
+# The screen-lock and idle policy. `01-workstation-lock` in this database's `locks/`
+# directory makes every key here non-overridable by the user.
+#
+# The display blanks and locks; the session never suspends or hibernates, on AC or
+# on battery, so the machine stays reachable over SSH. `lock-delay` and
+# `idle-delay` are `uint32` in the schema and say so here.
+[org/gnome/desktop/screensaver]
+lock-enabled={{ dconf_lock_enabled | bool | lower }}
+lock-delay=uint32 {{ dconf_lock_delay }}
+
+[org/gnome/desktop/session]
+idle-delay=uint32 {{ dconf_idle_delay }}
+
+[org/gnome/settings-daemon/plugins/power]
+sleep-inactive-ac-type='{{ dconf_sleep_ac }}'
+sleep-inactive-battery-type='{{ dconf_sleep_battery }}'
+sleep-inactive-ac-timeout={{ dconf_sleep_ac_timeout }}
+sleep-inactive-battery-timeout={{ dconf_sleep_battery_timeout }}

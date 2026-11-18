@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#020d09"/>
+    <stop offset="0.55" stop-color="#041f16"/>
+    <stop offset="1" stop-color="#064e3b"/>
+  </linearGradient>
+  <radialGradient id="glow" cx="0.74" cy="0.28" r="0.62">
+    <stop offset="0" stop-color="#10b981" stop-opacity="0.30"/>
+    <stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="facet" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#10b981" stop-opacity="0.18"/>
+    <stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="emerald" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#10b981"/>
+    <stop offset="1" stop-color="#047857"/>
+  </linearGradient>
+</defs>
+<rect width="1920" height="1080" fill="url(#bg)"/>
+<rect width="1920" height="1080" fill="url(#glow)"/>
+<g opacity="0.5">
+  <polygon points="1120,0 1920,0 1920,720 1500,900 1120,470" fill="url(#facet)"/>
+  <polygon points="1320,300 1920,150 1920,560 1520,760" fill="#0b3d2e" opacity="0.55"/>
+</g>
+<g transform="translate(960 410)" opacity="0.95">
+  <path d="M-170 -70 L-70 90 L0 -20 L70 90 L170 -70" stroke="#ffffff" stroke-width="30" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="960" y="650" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="60" letter-spacing="17" fill="#a7f3d0">WORKSTATION EDITION</text>
+<text x="960" y="715" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="26" letter-spacing="8" fill="#6ee7b7" opacity="0.7">GNOME · WAYLAND</text>
+<line x1="740" y1="760" x2="1180" y2="760" stroke="#10b981" stroke-width="3" opacity="0.7"/>
+</svg>

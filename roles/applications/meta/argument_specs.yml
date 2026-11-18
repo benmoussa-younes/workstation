@@ -1,0 +1,129 @@
+---
+argument_specs:
+  main:
+    short_description: The declared desktop applications and GNOME Shell extensions.
+    description:
+      - >-
+        Installs the declared applications from Debian, adds Mozilla's pinned
+        APT repository, purges `firefox-esr`, installs Mozilla's `firefox`, and
+        proves each favorite desktop id resolves to an installed entry. The
+        declared GNOME Shell extensions are read back from their installed
+        directories; `gnome-extensions list` needs a session and is the
+        post-login proof. The dash itself is pinned by the `dconf` role.
+    author: Younes BENMOUSSA
+    options:
+      applications_mimeapps_file:
+        type: str
+        required: false
+        description: >-
+          The XDG default-handler file for every account
+          (`/etc/xdg/mimeapps.list`). A fresh Debian ships none, and without it
+          `xdg-open image.png` picked whichever application last claimed the
+          type.
+      applications_mimeapps_defaults:
+        type: dict
+        required: false
+        description: >-
+          The default handler per MIME type. The product declares the image
+          types for Loupe, `application/pdf` for Papers, and VLC
+          (`vlc.desktop`) for the video and audio types it installs.
+      applications_packages:
+        type: list
+        elements: str
+        required: false
+        description: The application packages; the full list is in `defaults/main.yml`.
+      applications_favorite_desktops:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The desktop ids the dash pins. Each one must resolve under
+          `applications_desktop_dir`; `dconf` pins the same list.
+      applications_extension_uuids:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The GNOME Shell extension UUIDs that must be installed. `dconf` enables
+          and locks the same four.
+      applications_browser:
+        type: str
+        required: false
+        description: The declared browser package (Mozilla's `firefox`).
+      applications_forbidden_browser:
+        type: str
+        required: false
+        description: >-
+          The browser Debian ships in its place. The product purges it before
+          installing Mozilla's build; it is a different browser with a different
+          desktop id and profile.
+      applications_mozilla_key_url:
+        type: str
+        required: false
+        description: The official URL of Mozilla's repository signing key.
+      applications_mozilla_key_checksum:
+        type: str
+        required: false
+        description: The SHA-256 pin of the Mozilla signing key.
+      applications_mozilla_key_fingerprint:
+        type: str
+        required: false
+        description: The OpenPGP fingerprint the downloaded Mozilla key must carry.
+      applications_mozilla_key_path:
+        type: str
+        required: false
+        description: Where the Mozilla signing key is installed for apt.
+      applications_mozilla_repo_url:
+        type: str
+        required: false
+        description: The Mozilla APT repository URL.
+      applications_mozilla_repo_suite:
+        type: str
+        required: false
+        description: The Mozilla APT suite (`mozilla`).
+      applications_mozilla_repo_component:
+        type: str
+        required: false
+        description: The Mozilla APT component (`main`).
+      applications_mozilla_repo_file:
+        type: str
+        required: false
+        description: The apt source file the product writes.
+      applications_assert_firefox:
+        type: bool
+        required: false
+        description: Whether the declared browser is asserted after the install.
+      applications_retired_vscodium_package:
+        type: str
+        required: false
+        description: >-
+          The editor package the old applications role installed by default.
+          It is retired unless `vscodium` is selected in `developer_tools`.
+      applications_retired_vscodium_repo_file:
+        type: str
+        required: false
+        description: The old VSCodium apt source file retired with the package.
+      applications_retired_vscodium_key_path:
+        type: str
+        required: false
+        description: The old VSCodium apt key retired with the package.
+      applications_retire_gnome_terminal:
+        type: bool
+        required: false
+        description: >-
+          Whether the duplicate GNOME terminal and its Nautilus extension are
+          retired after Ptyxis is installed.
+      applications_desktop_dir:
+        type: str
+        required: false
+        description: >-
+          The directory Debian's packaged desktop entries live in. The
+          per-account directory is deliberately not read: a favorite is declared
+          for every account.
+      applications_extension_dir:
+        type: str
+        required: false
+        description: >-
+          The directory the `gnome-shell-extension-*` packages install their
+          UUID subdirectories in. The converge proves the directory exists; the
+          session-level list is checked after login.

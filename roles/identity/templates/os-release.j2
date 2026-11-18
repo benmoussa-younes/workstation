@@ -1,0 +1,30 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# What a human reads is the EDITION and its version:
+#
+#   PRETTY_NAME="Workstation Edition 0.1.0"
+#
+# What a package manager reads stays Debian. `VERSION_CODENAME` in particular is
+# not branding: `aptsources/distro.py` reads it as the codename it resolves
+# repositories against, so emptying it breaks `apt update` on every source that
+# names a suite. `ID` and `ID_LIKE` are resolution keys for the same reason.
+#
+# Measured: `grep VERSION_CODENAME /usr/lib/python3/dist-packages/aptsources/
+# distro.py` returns the lookup that reads this file (2026-10-20).
+PRETTY_NAME="{{ identity_name }} {{ identity_version }}"
+NAME="{{ identity_name }}"
+VERSION_ID="{{ identity_version }}"
+VERSION="{{ identity_version }}"
+VERSION_CODENAME={{ identity_debian_release_name }}
+ID=debian
+ID_LIKE=debian
+{% if identity_home_url | length > 0 %}
+HOME_URL="{{ identity_home_url }}"
+{% endif %}
+{% if identity_support_url | length > 0 %}
+SUPPORT_URL="{{ identity_support_url }}"
+{% endif %}
+{% if identity_bug_report_url | length > 0 %}
+BUG_REPORT_URL="{{ identity_bug_report_url }}"
+{% endif %}

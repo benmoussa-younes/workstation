@@ -1,0 +1,4 @@
+---
+# Collections this product uses. Only `ansible.builtin`; every collection added
+# here is pinned to an exact version.
+collections: []

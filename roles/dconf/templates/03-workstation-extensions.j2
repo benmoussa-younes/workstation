@@ -1,0 +1,14 @@
+# Managed by Ansible; do not edit.
+#
+# The curated extension set: four extensions, no user extension switcher, and no
+# installation of anything else. `04-workstation-extensions` in `locks/` makes the
+# four keys non-overridable, so a session cannot add a fifth.
+#
+# `00-workstation` declares the OTHER key of this section (`favorite-apps`). Two
+# keyfiles may declare the same section as long as they declare different keys;
+# dconf merges them into one database (verified with `dconf compile` + `dconf
+# read` on the reference workstation, 2026-10-26).
+[org/gnome/shell]
+enabled-extensions=[{{ dconf_extensions | map('regex_replace', '^(.+)$', "'\\1'") | join(', ') }}]
+disable-user-extensions=false
+allow-extension-installation={{ dconf_allow_extension_installation | bool | lower }}

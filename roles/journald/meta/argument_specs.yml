@@ -1,0 +1,53 @@
+---
+argument_specs:
+  main:
+    short_description: Bound the systemd journal.
+    description:
+      - Deploys a journald drop-in that bounds the persistent journal by size
+        and retention.
+    author: Younes BENMOUSSA
+    options:
+      journald_dropin_dir:
+        type: str
+        required: false
+        description: The journald drop-in directory.
+      journald_dropin_name:
+        type: str
+        required: false
+        description: >-
+          The drop-in file name. The default lives in `defaults/main.yml`:
+          `zz-journald.conf`, because the LAST drop-in wins and Debian's
+          `syslog.conf` sorts after `90-`.
+      journald_storage:
+        type: str
+        required: false
+        description: The journal's storage mode.
+        choices: [persistent, volatile, auto]
+      journald_system_max_use:
+        type: str
+        required: false
+        description: The maximum disk the journal may use (SystemMaxUse).
+      journald_system_max_file_size:
+        type: str
+        required: false
+        description: The maximum size of one journal file (SystemMaxFileSize).
+      journald_system_max_files:
+        type: int
+        required: false
+        description: The maximum number of journal files (SystemMaxFiles).
+      journald_max_retention_sec:
+        type: str
+        required: false
+        description: The maximum retention time (MaxRetentionSec).
+      journald_forward_to_syslog:
+        type: bool
+        required: false
+        description: >-
+          Forward journal entries to syslog. False by default: Debian forces
+          yes, and a second copy is not wanted.
+      journald_compress:
+        type: bool
+        required: false
+        description: >-
+          Compress journal files. zstd keeps roughly twice the history, but an
+          older journalctl cannot read it.

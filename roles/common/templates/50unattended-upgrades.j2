@@ -1,0 +1,26 @@
+// Managed by Ansible; do not edit.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// What this host lets `unattended-upgrades` install: SECURITY updates only
+//. The plain `label=Debian` origin (the main repository) is
+// deliberately absent -- allowing it would upgrade every package
+// automatically, which is not a security patch.
+Unattended-Upgrade::Origins-Pattern {
+{% for origin in common_unattended_origins %}
+        "{{ origin }}";
+{% endfor %}
+};
+
+// Never reboot on its own: these servers hold services, and an unattended
+// reboot is an outage. The kernel is updated; the reboot is the operator's.
+Unattended-Upgrade::Automatic-Reboot "{{ 'true' if common_unattended_autoreboot else 'false' }}";
+
+// Log to the journal. The product ships no mail path: it neither runs an MTA nor
+// relays to one, so a report addressed to root would have nowhere to go.
+Unattended-Upgrade::SyslogEnable "true";
+Unattended-Upgrade::Mail "";
+Unattended-Upgrade::MailReport "off";
+
+// Removals are a declared decision (the `common` role's absent list), never a
+// side effect of an upgrade.
+Unattended-Upgrade::Remove-Unused-Dependencies "false";

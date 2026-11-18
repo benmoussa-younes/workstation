@@ -1,0 +1,64 @@
+---
+argument_specs:
+  main:
+    short_description: The Debian server baseline.
+    description:
+      - Ensures the baseline packages are present and the configuration
+        directories exist.
+    author: Younes BENMOUSSA
+    options:
+      common_packages:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The packages every host needs. The full list is in
+          `defaults/main.yml`; the schema names the contract, not a second copy
+          of it.
+      common_directories:
+        type: list
+        elements: str
+        required: false
+        description: The configuration directories to create.
+          - /etc/workstation
+      common_unattended_origins:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The origins `unattended-upgrades` may install from. The default is
+          Debian's security archive only; the main repository is deliberately
+          absent.
+          - "origin=Debian,codename=${distro_codename}-security,label=Debian-Security"
+          - "origin=Debian,codename=${distro_codename},label=Debian-Security"
+      common_unattended_autoreboot:
+        type: bool
+        required: false
+        description: Whether an unattended upgrade may reboot the host (false).
+      common_auto_upgrades_file:
+        type: str
+        required: false
+        description: The apt.conf.d file that enables the periodic upgrade.
+      common_unattended_upgrades_file:
+        type: str
+        required: false
+        description: The apt.conf.d file that declares the allowed origins.
+      common_geoclue_config:
+        type: str
+        required: false
+        description: The location service's configuration file.
+      common_absent_packages:
+        type: list
+        elements: str
+        required: false
+        description: The common_absent_packages the role declares (defaults/main.yml).
+          - inetutils-telnet
+          - installation-report
+          - reportbug
+          - os-prober
+          - krb5-locales
+          - doc-debian
+          - debian-faq
+          - shotwell
+          - shotwell-common
+          - cron

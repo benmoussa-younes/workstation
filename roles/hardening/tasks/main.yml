@@ -1,0 +1,621 @@
+---
+- name: The kernel settings are declared
+  ansible.builtin.template:
+    src: sysctl-hardening.conf.j2
+    dest: "{{ hardening_sysctl_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the kernel settings
+
+# Reboot policy: a kernel update installs the fix and the machine says so. The
+# `unattended-upgrades` configuration writes `/run/reboot-required` and
+# `/run/reboot-required.pkgs` itself (Debian's package does, measured on
+# the proof host, 2026-10-22); `workstation-reboot-check` writes only the first. The
+# check is installed BELOW only where that mechanism is absent -- a site that
+# keeps its own upgrade policy keeps the decision, and the timer must not
+# overwrite the file a pending update is waiting on.
+- name: Whether Debian's reboot flag is managed by the upgrade mechanism is known
+  ansible.builtin.stat:
+    path: /usr/share/unattended-upgrades/unattended-upgrade-shutdown
+  register: hardening_reboot_flag_owner
+
+- name: The reboot flag is raised by the upgrade mechanism
+  ansible.builtin.set_fact:
+    hardening_reboot_check_enabled: "{{ not hardening_reboot_flag_owner.stat.exists }}"
+
+# A sysctl file this role does not declare wins any key it shares: `sysctl
+# --system` reads the directory in NAME order, so a `99-` file left by another
+# tool silently overrides `50-performance.conf` and `60-hardening.conf`.
+# Measured on a converted machine (ws01, 2026-10-20). The declaration is the
+# whole policy, so anything else is retired -- renamed, never deleted.
+- name: The sysctl declarations already present are listed
+  # `*.conf` only: the distribution's `README.sysctl` is documentation, and a
+  # file without that suffix is not read by `sysctl --system` at all.
+  ansible.builtin.find:
+    paths: "{{ hardening_sysctl_file | dirname }}"
+    patterns: "*.conf"
+    file_type: file
+  register: hardening_sysctl_existing
+
+- name: The declarations this role and the tuning role own are known
+  # The declarations this role and the tuning role own are known
+  # Four files the product writes share the directory; any other file must be
+  # named by the site (`hardening_sysctl_kept`) or it is retired. The tuning
+  # role owns BOTH `50-performance.conf` (vm.*) and
+  # `51-performance-network.conf` (net.*): the network tuning is a performance
+  # declaration, not a hardening one, and the split keeps the security file
+  # owning its own namespace. The opt-in `gaming` role owns
+  # `61-gaming-userns.conf`: without it here, this role renamed the file the
+  # gaming role had just written, and every converge reported the pair as a
+  # change (measured on the desktop site, 2026-11-11). The optional
+  # `virtualization` role owns `62-podman-userns.conf` for the same reason:
+  # rootless Podman needs the setting this role disables.
+  ansible.builtin.set_fact:
+    hardening_sysctl_declared: >-
+      {{ [hardening_sysctl_file,
+          (hardening_sysctl_file | dirname) ~ '/50-performance.conf',
+          (hardening_sysctl_file | dirname) ~ '/51-performance-network.conf',
+          (hardening_sysctl_file | dirname) ~ '/61-gaming-userns.conf',
+          (hardening_sysctl_file | dirname) ~ '/62-podman-userns.conf']
+         + hardening_sysctl_kept }}
+
+# Only a file NO PACKAGE owns is retired: a distribution drop-in is not this
+# role's to remove, and a package would restore it on its next upgrade.
+- name: The sysctl declarations are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ hardening_sysctl_existing.files | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('in', hardening_sysctl_declared)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: hardening_sysctl_owner
+  changed_when: false
+  failed_when: false
+
+- name: The sysctl declarations no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: "{{ hardening_sysctl_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+  notify: Apply the kernel settings
+
+- name: The kernel settings are applied now
+  ansible.builtin.meta: flush_handlers
+
+- name: The audit trail and post-upgrade restarts are installed
+  ansible.builtin.apt:
+    name:
+      - auditd
+      - needrestart
+    state: present
+    cache_valid_time: 3600
+
+- name: The post-upgrade restart policy is declared
+  ansible.builtin.template:
+    src: needrestart.conf.j2
+    dest: "{{ hardening_needrestart_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# The package is installed by the task above, so the unit exists on a real
+# run -- but not in check mode, where the install is only reported.
+- name: The audit trail runs
+  ansible.builtin.systemd_service:
+    name: auditd
+    state: started
+    enabled: true
+  when: not ansible_check_mode
+
+# Debian ships `auditd` with an EMPTY ruleset: it logs PAM session events and
+# audits nothing else. This product declares what it wants audited, in `rules.d`
+# (the package's own file carries the control directives).
+- name: The audit rules are declared
+  ansible.builtin.template:
+    src: audit-hardening.rules.j2
+    dest: "{{ hardening_audit_rules_file }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Reload the audit rules
+
+# `augenrules` merges EVERY file in `rules.d`, so a rule set left by another
+# product is part of this host's policy without anyone declaring it. Found on
+# the first real apply: a second file declared the same watches, the merged
+# policy carried each one twice, and the load failed with "Rule exists".
+# The declaration is the whole policy, so anything else is retired -- renamed,
+# not deleted, so it can be read back.
+- name: The undeclared audit rule files are found
+  ansible.builtin.find:
+    paths: "{{ hardening_audit_rules_file | dirname }}"
+    patterns: "*.rules"
+  register: hardening_audit_rule_files
+
+# `audit.rules` is the DISTRIBUTION's file and it is NOT retired: it carries the
+# control directives (`-D`, `-b`, `--backlog_wait_time`, `-f`) that `augenrules`
+# puts at the head of the merged file. Without its `-D`, a load ADDS the rules
+# to the running set instead of replacing it, and the second converge fails with
+# `Rule exists` -- measured on a converted machine (2026-10-20), after this role
+# had retired the distribution's file as "undeclared".
+#
+# So the rule is: the distribution's `audit.rules` stays, this role's own file
+# stays, and everything else is retired.
+- name: The audit rule files this role does not declare are retired
+  ansible.builtin.command:
+    cmd: mv {{ item }} {{ item }}.retired-{{ ansible_date_time.date }}
+  loop: >-
+    {{ hardening_audit_rule_files.files | map(attribute='path')
+       | reject('search', '\.retired-|\.disabled-')
+       | reject('in', [hardening_audit_rules_file,
+                       (hardening_audit_rules_file | dirname) ~ '/audit.rules'])
+       | list }}
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  notify: Reload the audit rules
+
+# The log bound, declared rather than inherited (Debian's default is 8 MB x 5).
+# `create: true` because on a fresh machine the package is installed by the
+# task above but a `--check` run only SIMULATES that install: the conffile
+# does not exist yet, and `lineinfile` without `create` fails on the absent
+# file even in check mode (measured on the proof host, 2026-10-21).
+- name: The audit log is bounded
+  ansible.builtin.lineinfile:
+    path: "{{ hardening_audit_conf }}"
+    regexp: "^\\s*{{ item.key }}\\s*="
+    line: "{{ item.key }} = {{ item.value }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0640"
+  loop:
+    - { key: max_log_file, value: "{{ hardening_audit_max_log_file }}" }
+    - { key: num_logs, value: "{{ hardening_audit_num_logs }}" }
+    - { key: max_log_file_action, value: "{{ hardening_audit_max_log_file_action }}" }
+  notify: Restart auditd
+
+- name: The audit rules and settings are applied now
+  ansible.builtin.meta: flush_handlers
+
+# Unprivileged user namespaces. Debian ships the profile in
+# complain mode, so it only logs; `aa-enforce` makes it bite. `apparmor-utils`
+# (the tool) comes from `common`.
+- name: The userns profile mode is read
+  ansible.builtin.command:
+    cmd: grep -c 'flags=(complain)' {{ hardening_userns_profile }}
+  register: hardening_userns_complain
+  changed_when: false
+  failed_when: false
+
+- name: Unprivileged user namespaces are confined
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: "{{ hardening_userns_tool }} {{ hardening_userns_profile }}"
+  when: hardening_userns_complain.stdout | int > 0
+  changed_when: true
+
+# The kernel command line. Declared here; it takes effect at the
+# next reboot, which is the operator's. `update-grub` rewrites
+# the bootloader config.
+#
+# The mode decides whether the declaration REPLACES the line or ADDS to it. In
+# append mode the file as installed is the starting point: the task reads the
+# line, keeps every option it does not own, and appends the missing ones. The
+# comparison is by key, so `quiet` is not appended when `quiet` is already there
+# and `init_on_alloc=1` is not doubled by a different spelling.
+- name: The current kernel command line is read
+  ansible.builtin.slurp:
+    src: "{{ hardening_grub_default }}"
+  register: hardening_grub_read
+
+- name: The declared kernel options are computed
+  ansible.builtin.set_fact:
+    hardening_cmdline_effective: >-
+      {%- if hardening_cmdline_mode == 'replace' -%}
+      {{ hardening_kernel_cmdline }}
+      {%- else -%}
+      {%- set existing =
+            (hardening_grub_read.content | default('') | b64decode
+             | regex_findall('GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"')
+             | first | default('') | split) -%}
+      {%- set keys = existing | map('regex_replace', '=.*$', '') | list -%}
+      {{ existing
+         + (hardening_kernel_cmdline
+            | reject('in', keys)
+            | list) }}
+      {%- endif -%}
+
+- name: The kernel command line is declared
+  ansible.builtin.lineinfile:
+    path: "{{ hardening_grub_default }}"
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="{{ hardening_cmdline_effective | unique | join(" ") }}"'
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update grub
+
+# The menu title is the product's name, not a distribution label. This is the
+# server product's declaration, ported as-is: the literal line of Debian's
+# `10_linux` is replaced, `update-grub` rebuilds the title, and the read-back
+# proves the suffix is gone. `/etc/default/grub` is NOT touched here:
+# `GRUB_CMDLINE_LINUX_DEFAULT` above is the only key this role owns there.
+#
+# The read-back is what makes a silent regression loud: if `grub-common` ships a
+# rewritten line, the replace stops matching and the assertion fails instead of
+# leaving `GNU/Linux` in the menu.
+- name: The boot menu does not append GNU/Linux to the product name
+  ansible.builtin.replace:
+    path: "{{ hardening_grub_script }}"
+    regexp: 'OS="\$\{GRUB_DISTRIBUTOR\} GNU/Linux"'
+    replace: 'OS="${GRUB_DISTRIBUTOR}"'
+  notify: Update grub
+
+- name: The boot menu is regenerated before it is read back
+  ansible.builtin.meta: flush_handlers
+
+- name: The boot menu title is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: grep -c GNU/Linux /boot/grub/grub.cfg
+  register: hardening_boot_menu
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The boot menu names no distribution suffix
+  ansible.builtin.assert:
+    that:
+      - (hardening_boot_menu.rc | default(2) | int) in [0, 1]
+      - hardening_boot_menu.stdout | default('') | trim | int == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: /boot/grub/grub.cfg still contains
+      `GNU/Linux` (`{{ hardening_boot_menu.stdout | default('no count') }}`
+      line(s), grep rc {{ hardening_boot_menu.rc | default('none') }}). The
+      replace in {{ hardening_grub_script }} did not apply: Debian may have
+      changed its title line. Read `grep -n GNU/Linux
+      {{ hardening_grub_script }}` and `grep -n GNU/Linux
+      /boot/grub/grub.cfg`.
+  when: not ansible_check_mode
+
+# Mount hardening: /tmp and /dev/shm are world-writable, so nothing there may
+# be executed.
+#
+# The options a mount ACCEPTS depend on its filesystem: `size=`, `nr_inodes=`
+# and `mode=` exist on tmpfs and nowhere else. This role used to write them
+# unconditionally into a `tmp.mount` drop-in; on a machine whose `/tmp` is its
+# own ext4 partition systemd then failed the mount, and with it
+# `local-fs.target`, and the machine booted to emergency mode (measured on
+# the proof host, 2026-10-21). The declaration is therefore built from what the
+# mount actually is.
+- name: The /tmp mount point is read
+  # A pure READ: it runs in check mode too, so the tasks below can decide.
+  ansible.builtin.command:
+    cmd: findmnt -no TARGET /tmp
+  register: hardening_tmp_target
+  changed_when: false
+  check_mode: false
+
+- name: The /tmp filesystem and its options are read
+  ansible.builtin.command:
+    cmd: findmnt -no FSTYPE,OPTIONS /tmp
+  register: hardening_tmp_mount
+  changed_when: false
+  check_mode: false
+
+# The DECLARATION the drop-in must reproduce comes from fstab, not from the live
+# mount. `Options=` in a drop-in replaces the fstab list, so the stable source is
+# the list fstab carries. Reading the live mount is what made the file change
+# once per boot: run 1 saw `rw,relatime` and wrote
+# `rw,relatime,nosuid,nodev,noexec`; after the drop-in applied, the kernel
+# reported `rw,nosuid,nodev,noexec,relatime`, and run 2 rewrote the file in that
+# order (measured on the production host, 2026-10-27). `findmnt --fstab` reads
+# the file, never the mounted state, and exits 1 when `/tmp` has no entry.
+- name: The /tmp declaration in fstab is read
+  ansible.builtin.command:
+    cmd: findmnt -no OPTIONS --fstab /tmp
+  register: hardening_tmp_fstab
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The /tmp mount drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ hardening_tmp_mount_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: hardening_tmp_target.stdout == '/tmp'
+
+# A drop-in exists only for a mount OF ITS OWN: systemd applies it to the
+# `tmp.mount` generated from `fstab`, and `Options=` there REPLACES the
+# installer's list. It must therefore carry the list that filesystem can take,
+# plus the hardening keys -- never tmpfs keys on a disk.
+#
+# The source of that list, in order:
+#   * the fstab entry, which is what the drop-in replaces and never changes by
+#     itself. Only the FIRST entry is read: two `/tmp` lines are a malformed
+#     fstab, `findmnt` prints both, and the mount generator uses the first;
+#   * the tmpfs defaults (`hardening_tmp_mount_options`) when /tmp is a tmpfs
+#     systemd generates with no fstab entry;
+#   * the live options with the hardening keys removed, for a disk mount no
+#     fstab entry declares (a `.mount` unit, for instance). Removing them first
+#     makes the result independent of the order the kernel reports.
+- name: The /tmp mount is declared
+  ansible.builtin.copy:
+    content: "[Mount]\nOptions={{ hardening_tmp_effective_options }}\n"
+    dest: "{{ hardening_tmp_mount_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    hardening_tmp_fstype: "{{ hardening_tmp_mount.stdout.split()[0] | default('') }}"
+    hardening_tmp_live_options: "{{ hardening_tmp_mount.stdout.split()[1] | default('') }}"
+    hardening_tmp_declared_options: >-
+      {{ (hardening_tmp_fstab.stdout_lines | default([]) | first | default('')
+          | trim
+          | regex_replace('(^|,)x-systemd\.[^,]*', '')
+          | regex_replace('^,|,$', ''))
+         if (hardening_tmp_fstab.rc | default(1)) == 0
+            and (hardening_tmp_fstab.stdout | trim | length) > 0
+         else (hardening_tmp_mount_options
+               if hardening_tmp_fstype == 'tmpfs'
+               else (hardening_tmp_live_options.split(',')
+                     | reject('in', ['nosuid', 'nodev', 'noexec'])
+                     | list | join(','))) }}
+    hardening_tmp_effective_options: >-
+      {{ ((hardening_tmp_declared_options.split(',')
+           | reject('equalto', ''))
+          + ['nosuid', 'nodev'])
+         | unique | join(',') }}
+  when: hardening_tmp_target.stdout == '/tmp'
+  notify: Reload systemd
+
+# A `/tmp` that shares the root filesystem is not a mount: a drop-in would
+# describe a mount that does not exist, and a remount would set the option on
+# `/` itself (`mount -o remount,noexec /tmp` makes the whole root noexec).
+- name: A /tmp drop-in this role no longer has a mount for is retired
+  ansible.builtin.file:
+    path: "{{ hardening_tmp_mount_dropin }}"
+    state: absent
+  when: hardening_tmp_target.stdout != '/tmp'
+  notify: Reload systemd
+
+- name: /dev/shm is declared noexec
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^tmpfs\s+/dev/shm\s'
+    line: "tmpfs /dev/shm tmpfs {{ hardening_shm_mount_options }} 0 0"
+    state: present
+  notify: Reload systemd
+
+# The live mount must follow the declaration: a `/tmp` still mounted `noexec`
+# after the drop-in was written keeps breaking the tools the desktop runs from
+# it until the next boot. `exec` is the inverse option, and remount applies it.
+- name: The /tmp mount is remounted executable
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: mount -o remount,nosuid,nodev,exec /tmp
+  when:
+    - hardening_tmp_target.stdout == '/tmp'
+    - "'noexec' in hardening_tmp_mount.stdout"
+  changed_when: true
+
+- name: The /dev/shm mount options are read
+  ansible.builtin.command:
+    cmd: findmnt -no OPTIONS /dev/shm
+  register: hardening_shm_opts
+  changed_when: false
+
+- name: /dev/shm is not executable
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: mount -o remount,nosuid,nodev,noexec /dev/shm
+  when: "'noexec' not in hardening_shm_opts.stdout"
+  changed_when: true
+
+# Resource limits: a declared base, not a guess per service.
+- name: The resource limits directory exists
+  ansible.builtin.file:
+    path: "{{ hardening_limits_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The base resource limits are declared
+  ansible.builtin.template:
+    src: limits-workstation.conf.j2
+    dest: "{{ hardening_limits_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Two files in `limits.d` with the same `*` domain do not conflict visibly: pam
+# applies each line, and a later soft/hard pair replaces an earlier one without
+# a word. A file this role does not declare is therefore retired, as in
+# `sysctl.d` and `sshd_config.d`.
+- name: The resource-limit declarations already present are listed
+  ansible.builtin.find:
+    paths: "{{ hardening_limits_file | dirname }}"
+    patterns: "*.conf"
+    file_type: file
+  register: hardening_limits_existing
+
+# Only a file NO PACKAGE owns is retired. `10-coredump-debian.conf` (systemd) and
+# `25-pw-rlimits.conf` (pipewire) are the distribution's, and removing them would
+# fight a package on its next upgrade; a file left by another engine is owned by
+# nobody and is exactly what must go.
+- name: The resource-limit declarations are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ hardening_limits_existing.files | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('equalto', hardening_limits_file)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: hardening_limits_owner
+  changed_when: false
+  failed_when: false
+
+- name: The resource-limit declarations no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: "{{ hardening_limits_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+
+- name: The systemd limits directory exists
+  ansible.builtin.file:
+    path: "{{ hardening_system_limits_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The services' base limit is declared
+  ansible.builtin.template:
+    src: system-limits.conf.j2
+    dest: "{{ hardening_system_limits_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# The reboot policy: a security kernel is installed, and the
+# machine is never rebooted on its own -- but it says when a reboot is pending.
+- name: The reboot check is in place
+  ansible.builtin.template:
+    src: reboot-check.sh.j2
+    dest: "{{ hardening_reboot_check_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: hardening_reboot_check_enabled | bool
+
+- name: The reboot check units are in place
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - workstation-reboot-check.service
+    - workstation-reboot-check.timer
+  notify: Reload systemd
+  when: hardening_reboot_check_enabled | bool
+
+- name: The reboot check units are loaded before they are started
+  ansible.builtin.meta: flush_handlers
+
+- name: The reboot check runs daily
+  ansible.builtin.systemd_service:
+    name: workstation-reboot-check.timer
+    enabled: true
+    state: started
+  # The units above are written, not installed, in check mode: naming a unit
+  # that systemd does not know yet fails the whole check run.
+  when:
+    - not ansible_check_mode
+    - hardening_reboot_check_enabled | bool
+
+- name: Unused subsystems are prevented from loading
+  ansible.builtin.template:
+    src: modprobe-hardening.conf.j2
+    dest: /etc/modprobe.d/60-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+# The disk monitor is declared, not inherited: `smartd` reads this file at
+# start. The service is restarted by the handler below, because a changed
+# schedule that the running daemon never reads is a declaration that does
+# nothing until the next boot.
+- name: The product's disk monitor schedule is installed
+  ansible.builtin.copy:
+    src: smartd.conf
+    dest: "{{ hardening_smartd_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: hardening_smartd_manage | bool
+  notify: Restart the disk monitor
+
+# A machine that boots to a desktop is told how to reach the reachable console --
+# its serial port -- and with `hardening_console_autologin`, a broken GNOME
+# session leaves a root shell one Enter away instead of a black screen. The same
+# `quiet nowatchdog` line also quiets the serial console (see the reboot tasks):
+# a splash on tty0 prints nothing useful on the debug port.
+#
+# `hardening_console_autologin` defaults to false: a workstation in a locked
+# room and a workstation on a desk are different sites, and the site says which.
+#
+# `hardening_console_autologin_term` is the bare device the getty serves
+# (`ttyS0`), because it names the unit `serial-getty@<device>.service`. The
+# override replaces the unit's `ExecStart` and keeps its instance (`%I`) and
+# baud list; a drop-in with only an `exec` line never starts.
+- name: The console autologin declaration is valid
+  ansible.builtin.assert:
+    that:
+      - hardening_console_autologin_term is match('^[A-Za-z0-9-]+$')
+      - not (hardening_console_autologin | bool)
+        or hardening_default_target == 'graphical.target'
+    fail_msg: >-
+      {{ inventory_hostname }} declares a console autologin on a target that is
+      not graphical, or a console name that is not a bare device: a console
+      autologin on a headless host is an unauthenticated root shell on its
+      serial line.
+
+- name: The console autologin drop-in directory exists
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ hardening_console_autologin_unit }}.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - hardening_default_target == 'graphical.target'
+    - hardening_console_autologin | bool
+
+- name: The console autologin is rendered
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible; do not edit.
+      # SPDX-License-Identifier: AGPL-3.0-or-later
+      #
+      # A root shell on the serial console, reachable when the desktop cannot
+      # start. `ExecStart=` clears the packaged command; the second line is the
+      # replacement, with the instance and baud list the unit would have used.
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin root --login-options '-' --keep-baud 115200,57600,38400,9600 %I $TERM
+    dest: "/etc/systemd/system/{{ hardening_console_autologin_unit }}.d/10-workstation-autologin.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - hardening_default_target == 'graphical.target'
+    - hardening_console_autologin | bool
+  notify: Reload systemd
+
+- name: The console autologin is withdrawn when the site does not want it
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ hardening_console_autologin_unit }}.d/10-workstation-autologin.conf"
+    state: absent
+  when: not hardening_console_autologin | bool
+  notify: Reload systemd
+
+- name: The default target suits the host
+  ansible.builtin.command:
+    cmd: systemctl set-default {{ hardening_default_target }}
+  register: hardening_target
+  changed_when: "'Created symlink' in hardening_target.stdout"

@@ -1,0 +1,225 @@
+---
+# PipeWire, installed and declared -- and deliberately NOT started.
+#
+# `pipewire`, `pipewire-pulse` and `wireplumber` are USER services: the systemd
+# user manager starts them at LOGIN. This role runs over SSH before GDM has a
+# session, so starting them here would start them for the wrong account (or for
+# none), and asserting their state would measure a session nobody uses. The role
+# therefore proves the PACKAGES and the UNITS, and the README carries
+# the commands the operator runs inside the session after login.
+
+- name: The declared audio stack is installed
+  ansible.builtin.apt:
+    name: "{{ audio_packages }}"
+    state: present
+    cache_valid_time: 3600
+
+# Read from dpkg, not from what the install above believes: in check mode that
+# install is only simulated, so every assertion below is skipped there.
+- name: The installed packages are read
+  ansible.builtin.package_facts:
+    manager: apt
+  when: not ansible_check_mode
+
+- name: The declared audio packages are present
+  ansible.builtin.assert:
+    that:
+      - >-
+        audio_packages | difference(ansible_facts.packages.keys() | list)
+        | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} is missing
+      {{ audio_packages | difference(ansible_facts.packages.keys() | list) }}.
+      `pipewire-audio` is what `gnome-core` pulls; a host missing it has no sound
+      server at all.
+  when: not ansible_check_mode
+
+- name: No second sound server is installed
+  ansible.builtin.assert:
+    that:
+      - >-
+        audio_conflict_packages | intersect(ansible_facts.packages.keys() | list)
+        | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} carries
+      {{ audio_conflict_packages | intersect(ansible_facts.packages.keys() | list) }}
+      beside PipeWire. Both own the PulseAudio socket, so the session would have
+      no sound; remove it deliberately before converging.
+  when: not ansible_check_mode
+
+- name: The audio configuration directory is read
+  ansible.builtin.stat:
+    path: "{{ audio_config_dir }}"
+  register: audio_config
+  when: not ansible_check_mode
+
+- name: The declared session units are read
+  ansible.builtin.stat:
+    path: "{{ audio_unit_dir }}/{{ item }}.service"
+  loop: "{{ audio_user_services }}"
+  loop_control:
+    label: "{{ item }}"
+  register: audio_units
+  when: not ansible_check_mode
+
+- name: The audio stack ships its configuration and its session units
+  ansible.builtin.assert:
+    that:
+      - audio_config.stat.exists
+      - audio_units.results | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} is missing
+      {{ ([audio_config_dir] if not audio_config.stat.exists else [])
+         + (audio_units.results | rejectattr('stat.exists') | map(attribute='item') | list) }}.
+      The packages are installed but the session has nothing to start; read
+      `dpkg -L {{ audio_packages | join(' ') }}`.
+  when: not ansible_check_mode
+
+# What is NOT proven here, stated where the operator reads it. The systemd user
+# manager belongs to the account, and this converge never logs in as that account.
+- name: The audio proof is a session proof, made after login
+  ansible.builtin.debug:
+    msg: >-
+      {{ audio_user_services | join(', ') }} are USER services: they start with
+      the account's session, not with this converge. Prove them inside the
+      desktop session: `systemctl --user is-active
+      {{ audio_user_services | join(' ') }}` (each answers `active`), then
+      `wpctl status` for the devices. the README carries the commands.
+
+# `alsa-utils` 1.2.14-1 (the current Debian release) ships a rule with TWO
+# `LABEL="alsa_restore_go"` lines; the second one is where the file's
+# `GOTO="alsa_restore_std"` lands, so that target has no label and udev logs two
+# warnings per boot (Debian #1093057, fixed upstream, not in the current Debian
+# release). The fix is the one Debian's own merge request makes: rename the
+# SECOND label only, anchored on the line that follows it.
+#
+# OPT-IN: only the machine that shows the warnings enables this in its site
+# `host_vars`; the role default is false. `alsa-utils` is the package that ships
+# the rule, so it is installed only for the enabled workaround. In check mode the
+# package install is simulated and the rule may be absent; the workaround is then
+# inactive and nothing fails.
+- name: The ALSA restore rule's package is present
+  ansible.builtin.apt:
+    name: alsa-utils
+    state: present
+    cache_valid_time: 3600
+  when: audio_fix_alsa_restore | bool
+
+- name: The distribution's ALSA restore rule is read
+  ansible.builtin.stat:
+    path: "{{ audio_alsa_restore_source }}"
+  register: audio_alsa_restore_source_stat
+  when: audio_fix_alsa_restore | bool
+
+- name: The ALSA restore workaround is active
+  ansible.builtin.set_fact:
+    audio_alsa_restore_active: >-
+      {{ audio_fix_alsa_restore | bool
+         and (audio_alsa_restore_source_stat.stat is defined)
+         and (audio_alsa_restore_source_stat.stat.exists | default(false)) }}
+
+- name: The distribution's ALSA restore rule is slurped
+  ansible.builtin.slurp:
+    src: "{{ audio_alsa_restore_source }}"
+  register: audio_alsa_restore_content
+  when: audio_alsa_restore_active | bool
+
+- name: The workaround has the distribution rule it corrects
+  ansible.builtin.assert:
+    that:
+      - audio_alsa_restore_source_stat.stat.exists | default(false)
+    fail_msg: >-
+      `audio_fix_alsa_restore` is enabled but
+      `{{ audio_alsa_restore_source }}` does not exist. The workaround corrects
+      the rule shipped by `alsa-utils`; enable it only on the machine that shows
+      the two udev warnings, after that package is installed.
+  when:
+    - audio_fix_alsa_restore | bool
+    - not ansible_check_mode
+
+- name: The distribution's rule needs the label fix
+  ansible.builtin.set_fact:
+    audio_alsa_restore_needs_fix: >-
+      {{ (audio_alsa_restore_content.content | default('') | b64decode)
+         .count('LABEL="alsa_restore_go"') >= 2 }}
+  when: audio_alsa_restore_active | bool
+
+- name: The udev rule directory exists
+  ansible.builtin.file:
+    path: "{{ audio_alsa_restore_override | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: audio_alsa_restore_active | bool
+
+# an earlier draft masked the rule with a symlink to /dev/null. A copy to that
+# path would write INTO /dev/null, so the link is withdrawn first; a real file is
+# left alone.
+- name: The ALSA restore override is inspected
+  ansible.builtin.stat:
+    path: "{{ audio_alsa_restore_override }}"
+  register: audio_alsa_restore_override_stat
+  when: audio_alsa_restore_active | bool
+
+- name: An earlier mask of the ALSA restore rule is withdrawn
+  ansible.builtin.file:
+    path: "{{ audio_alsa_restore_override }}"
+    state: absent
+  when:
+    - audio_alsa_restore_active | bool
+    - audio_alsa_restore_override_stat.stat.islnk | default(false)
+
+# The corrected content is computed once, so the task is idempotent: a copy from
+# the package followed by a replace changed the file on every converge.
+- name: The corrected ALSA restore rule is declared
+  ansible.builtin.copy:
+    content: >-
+      {{ (audio_alsa_restore_content.content | b64decode)
+         | regex_replace('LABEL="alsa_restore_go"(\s+TEST!="/etc/alsa/state-daemon.conf")',
+                         'LABEL="alsa_restore_std"\1') }}
+    dest: "{{ audio_alsa_restore_override }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - audio_alsa_restore_active | bool
+    - audio_alsa_restore_needs_fix | bool
+  notify: Reload the udev rules
+
+- name: An override the distribution has outgrown is retired
+  ansible.builtin.file:
+    path: "{{ audio_alsa_restore_override }}"
+    state: absent
+  when:
+    - audio_alsa_restore_active | bool
+    - not audio_alsa_restore_needs_fix | bool
+  notify: Reload the udev rules
+
+- name: The corrected rule is read back
+  ansible.builtin.shell:  # noqa: command-instead-of-shell
+    cmd: >-
+      grep -c 'LABEL="alsa_restore_go"' {{ audio_alsa_restore_override }};
+      grep -c 'LABEL="alsa_restore_std"' {{ audio_alsa_restore_override }}
+  register: audio_alsa_restore_readback
+  changed_when: false
+  failed_when: false
+  when:
+    - audio_alsa_restore_active | bool
+    - audio_alsa_restore_needs_fix | bool
+    - not ansible_check_mode
+
+- name: The jump target has its label in the rule udev reads
+  ansible.builtin.assert:
+    that:
+      - audio_alsa_restore_readback.stdout_lines | default([]) | length == 2
+      - audio_alsa_restore_readback.stdout_lines[0] | default('0') | trim | int == 1
+      - audio_alsa_restore_readback.stdout_lines[1] | default('0') | trim | int == 1
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ audio_alsa_restore_override }} answers
+      `{{ audio_alsa_restore_readback.stdout | default('') | trim }}`; the rule
+      needs one `alsa_restore_go` and one `alsa_restore_std` label.
+  when:
+    - audio_alsa_restore_active | bool
+    - audio_alsa_restore_needs_fix | bool
+    - not ansible_check_mode

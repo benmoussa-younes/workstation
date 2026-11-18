@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The profile NetworkManager activates on the interface the hand-over adopts.
+# The address and the gateway are the ones the machine already had: they are
+# copied so that the moment the previous owner stops, NetworkManager can take the
+# link over without waiting for a lease the DHCP server may not give.
+#
+# The method stays `manual` with the same address on purpose: the hand-over must
+# not change the address the converge session is running on. A site that wants
+# DHCP for this interface replaces this profile with its own.
+[connection]
+id=workstation-adopted
+uuid={{ network_handover_profile_uuid }}
+type=ethernet
+interface-name={{ network_handover_devices[0] }}
+autoconnect=true
+autoconnect-priority=100
+
+[ethernet]
+wake-on-lan=ignore
+
+[ipv4]
+method=manual
+address1={{ network_adopted_address_cidr }}
+gateway={{ network_adopted_gateway }}
+may-fail=false
+
+[ipv6]
+method=auto
+may-fail=true

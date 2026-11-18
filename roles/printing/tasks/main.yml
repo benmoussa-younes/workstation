@@ -1,0 +1,196 @@
+---
+# CUPS, the scheduler and the declared PDF queue.
+#
+# Every command below is CUPS's own client (`lpstat`, `lpadmin`, `cupsenable`,
+# `cupsaccept`): there is no Ansible module for a queue, and the queue is the
+# declaration. The CUPS output that is parsed is read under `LC_ALL=C` -- `lpstat
+# -v` translates its text on a French machine (measured: "matériel pour PDF"),
+# so parsing the machine's locale would be a defect waiting for a site.
+
+- name: The CUPS packages are installed
+  ansible.builtin.apt:
+    name: "{{ printing_packages }}"
+    state: present
+    cache_valid_time: 3600
+
+- name: The print scheduler is enabled and started
+  ansible.builtin.systemd_service:
+    name: "{{ printing_service }}"
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+# The socket answers only once the daemon is up. `until` is the wait, and a
+# scheduler that never answers fails here instead of turning every later task
+# into "no such file or directory".
+- name: The print scheduler answers
+  ansible.builtin.command:
+    cmd: lpstat -r
+  environment:
+    LANG: C
+    LC_ALL: C
+  register: printing_scheduler
+  changed_when: false
+  failed_when: false
+  retries: "{{ printing_scheduler_retries }}"
+  delay: "{{ printing_scheduler_delay }}"
+  until: "'scheduler is running' in printing_scheduler.stdout"
+  when: not ansible_check_mode
+
+- name: The scheduler is running
+  ansible.builtin.assert:
+    that:
+      - printing_scheduler.stdout | trim == 'scheduler is running'
+    fail_msg: >-
+      {{ inventory_hostname }}: `lpstat -r` answers
+      `{{ printing_scheduler.stdout | trim }}`. Read `systemctl status
+      {{ printing_service }}` and the journal; a scheduler that is not running
+      makes every printing command fail.
+  when: not ansible_check_mode
+
+# The PPD comes from `printer-driver-cups-pdf`; without it `lpadmin` creates a
+# queue that accepts jobs and prints nothing.
+- name: The declared PPD is installed
+  ansible.builtin.stat:
+    path: "{{ printing_pdf_ppd }}"
+  register: printing_ppd
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+- name: The PDF driver ships the declared PPD
+  ansible.builtin.assert:
+    that:
+      - printing_ppd.stat.exists
+      - printing_ppd.stat.size | default(0) > 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no {{ printing_pdf_ppd }}. The PPD comes from
+      `printer-driver-cups-pdf` -- NOT from `cups-pdf`, which the current Debian release does not
+      ship -- so check `printing_packages` before creating a queue that would
+      print nothing.
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+- name: The declared queue is read
+  ansible.builtin.command:
+    cmd: lpstat -p {{ printing_pdf_queue }}
+  environment:
+    LANG: C
+    LC_ALL: C
+  register: printing_queue_state
+  changed_when: false
+  failed_when: false
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+# Created once, and only when absent: `lpadmin -p` on an existing queue would
+# rewrite its PPD and drop every option a site added by hand. A queue that exists
+# is the site's, and is only verified below.
+- name: The declared PDF queue is created
+  ansible.builtin.command:
+    cmd: >-
+      lpadmin -p {{ printing_pdf_queue }} -E
+      -v {{ printing_pdf_device }} -P {{ printing_pdf_ppd }}
+      {{ printing_pdf_options | map('regex_replace', '^', '-o ') | join(' ') }}
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+    - printing_queue_state.rc != 0
+  changed_when: true
+
+- name: The declared queue's accepting state is read
+  ansible.builtin.command:
+    cmd: lpstat -a {{ printing_pdf_queue }}
+  environment:
+    LANG: C
+    LC_ALL: C
+  register: printing_accept_state
+  changed_when: false
+  failed_when: false
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+# Accepting and printing are what separate a queue that exists from a queue that
+# works, and CUPS makes both idempotent -- so the change is reported from the
+# state READ ABOVE, not assumed away: a queue the site disabled is a change when
+# this role re-enables it (it declares its PDF queue enabled), and a creation
+# counts as one change although three commands take part in it.
+- name: The declared queue accepts jobs
+  ansible.builtin.command:
+    cmd: /usr/sbin/cupsaccept {{ printing_pdf_queue }}
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+  changed_when: >-
+    printing_queue_state.rc != 0
+    or 'not accepting' in printing_accept_state.stdout
+
+- name: The declared queue prints jobs
+  ansible.builtin.command:
+    cmd: /usr/sbin/cupsenable {{ printing_pdf_queue }}
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+  changed_when: >-
+    printing_queue_state.rc != 0
+    or 'disabled' in printing_queue_state.stdout
+
+- name: The queue's state is read back
+  ansible.builtin.command:
+    cmd: lpstat -p {{ printing_pdf_queue }}
+  environment:
+    LANG: C
+    LC_ALL: C
+  register: printing_queue_final
+  changed_when: false
+  failed_when: false
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+- name: The declared queue exists and is enabled
+  ansible.builtin.assert:
+    that:
+      - printing_queue_final.rc == 0
+      - "'enabled' in printing_queue_final.stdout"
+      - "'disabled' not in printing_queue_final.stdout"
+    fail_msg: >-
+      {{ inventory_hostname }}: `lpstat -p {{ printing_pdf_queue }}` answers
+      `{{ printing_queue_final.stdout | trim }}`. The queue is missing or
+      disabled; read `/etc/cups/printers.conf` and the journal of
+      `{{ printing_service }}`.
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+# The device URI is the only proof the queue prints THROUGH the PDF backend: a
+# queue with the right name and the wrong URI prints to a printer that may not
+# exist. The answer is localized, so only the URI itself is compared.
+- name: The queue's device is read back
+  ansible.builtin.command:
+    cmd: lpstat -v {{ printing_pdf_queue }}
+  environment:
+    LANG: C
+    LC_ALL: C
+  register: printing_queue_device
+  changed_when: false
+  failed_when: false
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode
+
+- name: The declared queue prints through the declared backend
+  ansible.builtin.assert:
+    that:
+      - printing_pdf_device in printing_queue_device.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: `lpstat -v {{ printing_pdf_queue }}` answers
+      `{{ printing_queue_device.stdout | trim }}`, which does not name
+      `{{ printing_pdf_device }}`. Recreate the queue with
+      `lpadmin -p {{ printing_pdf_queue }} -E -v {{ printing_pdf_device }}`.
+  when:
+    - printing_manage_pdf_queue | bool
+    - not ansible_check_mode

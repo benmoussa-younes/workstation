@@ -1,0 +1,196 @@
+---
+argument_specs:
+  main:
+    short_description: Kernel and system hardening.
+    description:
+      - >-
+        Declares the kernel settings this product relies on, read from /proc/sys
+        rather than trusted to distribution defaults. The audit found rp_filter
+        0, accept_redirects 1, log_martians 0, kptr_restrict 0, ptrace_scope 0
+        and kexec_load_disabled 0 — nothing was wrong, but nothing was decided.
+    author: Younes BENMOUSSA
+    options:
+      hardening_sysctl_file:
+        type: str
+        required: false
+        description: The sysctl drop-in this role owns.
+      hardening_kexec_load_disabled:
+        type: bool
+        required: false
+        description: >-
+          Disable the kexec system call. False on a host that runs kdump, which
+          loads its crash kernel through kexec.
+      hardening_core_pattern:
+        type: str
+        required: false
+        description: >-
+          Where a core dump goes. `|/bin/false` discards it (the product's
+          default); a site that debugs a service names a collector.
+      hardening_sysrq:
+        type: int
+        required: false
+        description: >-
+          The magic SysRq mask. 176 keeps sync, unmount and reboot; 0 disables
+          SysRq entirely.
+      hardening_default_target:
+        type: str
+        required: false
+        description: >-
+          The systemd default target. A headless server has no use for a
+          graphical target; a desktop host does, so the site declares which and
+          the check holds each host to its own answer.
+      hardening_modules_blocked:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Modules prevented from loading at all, via `install … /bin/false`,
+          which is stronger than a blacklist that only stops udev auto-loading.
+          The list itself is in `defaults/main.yml`.
+      hardening_modules_blacklisted:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Modules whose hardware probe starts them on its own; the blacklist
+          makes that probe find nothing instead of logging a refusal. The list
+          itself is in `defaults/main.yml`. It holds no Bluetooth entry: this
+          product's GNOME panel needs `bluetooth`, `btusb` and `btintel`
+          loadable, and the omission is recorded in the role comments.
+      hardening_audit_rules_file:
+        type: str
+        required: false
+        description: The audit rules drop-in (`augenrules` merges `rules.d`).
+      hardening_audit_conf:
+        type: str
+        required: false
+        description: The auditd configuration whose log bound is declared.
+      hardening_audit_max_log_file:
+        type: int
+        required: false
+        description: The maximum size of one audit log file, in MB.
+      hardening_audit_num_logs:
+        type: int
+        required: false
+        description: How many rotated audit log files to keep.
+      hardening_audit_max_log_file_action:
+        type: str
+        required: false
+        description: What auditd does when a log file reaches its maximum size.
+      hardening_grub_default:
+        type: str
+        required: false
+        description: The hardening_grub_default the role declares (defaults/main.yml).
+      hardening_grub_script:
+        type: str
+        required: false
+        description: >-
+          The menu generator whose title line is made to omit the
+          distribution's ` GNU/Linux` suffix.
+      hardening_kernel_cmdline:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The hardening options the role ensures on the kernel command line.
+          In append mode they are added to the installed line; in replace mode
+          they become the whole line.
+      hardening_cmdline_mode:
+        type: str
+        required: false
+        choices: [append, replace]
+        description: >-
+          How the declaration meets the installed line. `append` keeps every
+          option already present (the graphical splash, hardware workarounds)
+          and adds the missing ones; `replace` takes the list as the whole line.
+      hardening_limits_file:
+        type: str
+        required: false
+        description: The hardening_limits_file the role declares (defaults/main.yml).
+      hardening_limits_nofile:
+        type: int
+        required: false
+        description: The hardening_limits_nofile the role declares (defaults/main.yml).
+      hardening_limits_nproc:
+        type: int
+        required: false
+        description: The hardening_limits_nproc the role declares (defaults/main.yml).
+      hardening_needrestart_conf:
+        type: str
+        required: false
+        description: The hardening_needrestart_conf the role declares (defaults/main.yml).
+      hardening_reboot_check_script:
+        type: str
+        required: false
+        description: The hardening_reboot_check_script the role declares (defaults/main.yml).
+      hardening_shm_mount_options:
+        type: str
+        required: false
+        description: The hardening_shm_mount_options the role declares (defaults/main.yml).
+      hardening_system_limits_file:
+        type: str
+        required: false
+        description: The hardening_system_limits_file the role declares (defaults/main.yml).
+      hardening_tmp_mount_dropin:
+        type: str
+        required: false
+        description: The hardening_tmp_mount_dropin the role declares (defaults/main.yml).
+      hardening_tmp_mount_options:
+        type: str
+        required: false
+        description: The hardening_tmp_mount_options the role declares (defaults/main.yml).
+      hardening_userns_profile:
+        type: str
+        required: false
+        description: The hardening_userns_profile the role declares (defaults/main.yml).
+      hardening_userns_tool:
+        type: str
+        required: false
+        description: The hardening_userns_tool the role declares (defaults/main.yml).
+      hardening_sysctl_kept:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          Files kept in `/etc/sysctl.d/` when the role owns the directory; an
+          empty list means the role owns it unopposed.
+      hardening_panic_seconds:
+        type: int
+        required: false
+        description: Seconds before a kernel panic reboots (kernel.panic).
+      hardening_panic_print:
+        type: str
+        required: false
+        description: The kernel.panic_print mask, so a panic is diagnosable.
+      hardening_oops_limit:
+        type: int
+        required: false
+        description: kernel.oops_limit; a real BUG reboots, a WARN does not.
+      hardening_warn_limit:
+        type: int
+        required: false
+        description: kernel.warn_limit; 0 keeps a WARN from rebooting.
+      hardening_smartd_manage:
+        type: bool
+        required: false
+        description: >-
+          Take ownership of the smartd conffile and install the product's
+          weekly long self-test schedule. False leaves a site's own file
+          untouched.
+      hardening_smartd_conf:
+        type: str
+        required: false
+        description: The smartd conffile the product declares when it owns it.
+      hardening_console_autologin:
+        type: bool
+        required: false
+        description: >-
+          Give the serial console a root shell that survives a desktop that
+          cannot start. False by default: a site decision, honoured only on
+          `graphical.target`.
+      hardening_console_autologin_term:
+        type: str
+        required: false
+        description: >-
+          The `agetty` terminal line, in the termcap form `login` expects
+          (`ttyS0@115200`, after the `@` -- not the unit's `;`).

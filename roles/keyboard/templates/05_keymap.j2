@@ -1,0 +1,14 @@
+#!/bin/sh
+exec tail -n +3 "$0"
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The GRUB menu's own keyboard. GRUB runs before the kernel and never reads
+# /etc/default/keyboard, so the layout is compiled into GRUB's format by
+# `grub-kbdcomp` (console-setup's ckbcomp) and loaded here, before any menu
+# entry is drawn.
+insmod keylayouts
+# `${prefix}` is where GRUB found grub.cfg: `/grub` when /boot is a separate
+# filesystem, `/boot/grub` otherwise. An absolute `/boot/grub/...` names the
+# wrong filesystem on the separate-/boot machine and the menu stays US.
+keymap ${prefix}/keymap/{{ keyboard_grub_keymap_name }}.gkb

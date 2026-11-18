@@ -1,0 +1,8 @@
+---
+# `fc-cache -f` rebuilds every font cache on the machine. It runs only when the
+# package set changed: on a converged host there is nothing to rebuild, and doing
+# it every converge would be a second of work for no change.
+- name: Rebuild the font cache
+  ansible.builtin.command:
+    cmd: "{{ fonts_cache_command }} -f"
+  changed_when: true

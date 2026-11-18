@@ -1,0 +1,11 @@
+---
+# Apply the ruleset by loading it, NOT by `systemctl restart nftables`: the
+# distribution's unit has `ExecStop=/usr/sbin/nft flush ruleset`, so a restart
+# would wipe every other manager's chains until it reloaded. Loading the file
+# replaces only our own table, atomically.
+- name: Restart sshd
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode

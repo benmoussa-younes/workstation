@@ -1,0 +1,134 @@
+---
+# The day-0 baseline: every package this product declares a host must have. This
+# is the single source of it — the preseed renders the same list for day 0, and
+# this role restores any of them that is later removed.
+common_packages:
+  - openssh-server
+  - sudo
+  - python3
+  - python3-apt
+  - locales
+  - tzdata          # /usr/share/zoneinfo: the time role sets the declared zone
+  - ca-certificates
+  - gnupg
+  - apt-utils
+  - curl
+  - wget
+  - rsync
+  - git
+  - nano           # the one editor; EDITOR points at it (see below)
+  - less
+  - jq
+  - bash-completion
+  - unzip
+  - xz-utils
+  - zstd
+  - bzip2
+  - lm-sensors
+  - smartmontools
+  - nvme-cli       # the NVMe counterpart of smartctl: firmware, namespaces,
+                   # self-test scheduling; smartmontools reads the log, it does
+                   # not reach the controller
+  - pciutils
+  - usbutils
+  - dmidecode
+  - lsof
+  - sysstat
+  - bind9-dnsutils # `dnsutils` is a transitional no-op on the current Debian release
+  - mtr-tiny
+  - traceroute
+  - tcpdump
+  - nftables       # the tool; the ruleset is the security role's
+  - apparmor       # the MAC layer this product relies on
+  - apparmor-utils # aa-enforce/aa-complain: the tools that set profile modes
+  - apt-listchanges # upgrade changelogs; apt only Recommends it, so an
+                    # `autoremove` elsewhere will otherwise take it away
+  # The periodic-upgrade mechanism this product OWNS. The apt-daily timers only
+  # TRIGGER it; without this package they download lists and upgrade nothing.
+  # It is present from the first converge, so a fresh machine is patched.
+  - unattended-upgrades
+  # systemd-timesyncd is NOT here. `chrony` and `systemd-timesyncd` both
+  # Provides/Conflicts `time-daemon`, so a host cannot run both — and the `time`
+  # role, the single owner of the host's time daemon, installs the one the host's
+  # class needs (chrony on the hosts that serve NTP, timesyncd on the clients).
+  # Listing it here would reinstall it on every converge and remove chrony with
+  # it, forever..
+  - man-db
+  # The boot splash's configuration tool. `plymouth-set-default-theme` lives in
+  # `plymouth`, and the theme the `plymouth` role installs is inert without it.
+  # Declared here so the role that uses it never installs a package of its own.
+  - plymouth
+
+# Packages this product does not want, whatever `tasksel standard` or the
+# installer left behind. Each one is dead weight on a converged desktop; none of
+# them has a dependent.
+common_absent_packages:
+  - inetutils-telnet     # a cleartext client; nothing here speaks telnet
+  - installation-report  # an installer artefact, not a runtime tool
+  - reportbug            # a bug reporter for a product; a client reports to the studio
+  - os-prober            # scans for other operating systems at every boot
+  - krb5-locales         # Kerberos message translations
+  - doc-debian           # the Debian manual lives online, not on every host
+  - debian-faq
+  # Loupe is the declared image viewer; Shotwell is a second organizer with
+  # its own library and no product use. `shotwell-common` goes with it.
+  - shotwell
+  - shotwell-common
+  # NOT wamerican. It is a Recommends of cracklib-runtime, which the password
+  # quality policy uses for its dictionary check: removing it now would break
+  # that policy.
+  # cron is redundant here: every job Debian ships already has an equivalent
+  # systemd timer, and all of them are enabled — apt-daily, apt-daily-upgrade,
+  # apt-listchanges, dpkg-db-backup, e2scrub_all, fstrim, logrotate, man-db,
+  # sysstat-{collect,rotate,summary}. logrotate's
+  # `cron | anacron | cron-daemon | systemd-sysv` is satisfied by systemd-sysv,
+  # and sysstat recommends systemd.
+  - cron
+  - cron-daemon-common
+  # The French spell-check stack is NOT removed here. Inkscape recommends
+  # `aspell`, so purging it made the applications role reinstall it and the
+  # next converge remove it again. The desktop may use hunspell or aspell; both
+  # are legitimate. `emacsen-common` is also kept, for the same reason: `dict`
+  # and `hunspell-fr` recommend it.
+  # A VM-only artefact: it cannot run without a qga channel, and bare metal
+  # never installs it.
+  - qemu-guest-agent
+  # A workstation whose terminal is Ptyxis and whose editor is nano does not
+  # need the legacy wireless tools or the minimal vi. `iw` is declared by the
+  # network role; `nano` is the editor this product installs and declares in
+  # EDITOR/VISUAL. `vim-common` is deliberately KEPT: a site that installed
+  # `vim` depends on it, and removing it would remove the site's editor as an
+  # unnamed side effect. Only `vim-tiny` is named.
+  - wireless-tools
+  - vim-tiny
+
+# `laptop-detect` is NOT removed: on a desktop host it is exactly right (a
+
+common_directories:
+  - /etc/workstation
+
+# The periodic upgrades, declared. `unattended-upgrades` performs them; the
+# apt-daily timers only trigger it. This product installs SECURITY updates on its
+# own -- not full upgrades: a server's packages change on the maintenance
+# window, not under it.
+#
+# The allowed origins match Debian's security archive only. The plain
+# `label=Debian` (the main repository) is deliberately absent: allowing it would
+# upgrade every package automatically, which is not a security patch.
+common_unattended_origins:
+  - "origin=Debian,codename=${distro_codename}-security,label=Debian-Security"
+  - "origin=Debian,codename=${distro_codename},label=Debian-Security"
+
+# Never reboot on its own: these servers hold services, and an unattended reboot
+# is an outage. The kernel is updated, the reboot is the operator's.
+common_unattended_autoreboot: false
+
+# The two apt.conf.d files the mechanism reads. `20auto-upgrades` turns it on;
+# `50unattended-upgrades` says what it may install.
+common_auto_upgrades_file: /etc/apt/apt.conf.d/20auto-upgrades
+common_unattended_upgrades_file: /etc/apt/apt.conf.d/50unattended-upgrades
+
+# The location service's configuration. Its network-NMEA source fetches a GPS
+# from the local network over mDNS; Avahi is retired below, so that source has
+# no transport and its probe is the one warning left at boot.
+common_geoclue_config: /etc/geoclue/geoclue.conf

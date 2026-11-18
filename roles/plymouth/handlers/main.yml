@@ -1,0 +1,10 @@
+---
+# The selected theme is compiled INTO the initramfs by a hook `plymouth` ships
+# (`/usr/share/initramfs-tools/hooks/plymouth`). Without a rebuild the running
+# system boots the previous theme forever, while every file on disk says the new
+# one is selected.
+- name: Rebuild the initramfs
+  ansible.builtin.command:
+    cmd: "{{ plymouth_update_initramfs }} -u"
+  changed_when: true
+  when: not ansible_check_mode

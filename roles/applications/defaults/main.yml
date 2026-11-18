@@ -1,0 +1,158 @@
+---
+# The applications the studio declares.
+#
+# Debian first: every package in `applications_packages` is in the current Debian
+# release archive. One application is external and has its own pinned repository
+# below: Firefox from Mozilla's official repository. VSCodium moved to the
+# developer role's opt-in `vscodium` group. Debian's browser is `firefox-esr`, a
+# different browser with
+# `firefox-esr.desktop` rather than `firefox.desktop`; it does NOT
+# `Provides: firefox` (verified on the package, 2026-10-26), so the product
+# declares Mozilla's package and refuses to settle for the ESR.
+#
+# This role installs the PACKAGES and proves the desktop entries; the `dconf`
+# role is what pins them to the dash. The two lists agree, and `dconf` is the
+# place a favorite is actually declared.
+applications_packages:
+  - ptyxis                                     # the terminal: GNOME Terminal's
+                                               # successor, and the id the dash pins
+  - firefox                                    # Mozilla's build, NOT firefox-esr
+  - libreoffice                                # the complete office suite
+  - evolution                                  # the GNOME mail/calendar client
+  - inkscape                                  # vector graphics
+  - gimp                                      # raster image editing
+  - secrets                                    # GNOME Secrets, the password manager
+  - gnome-shell-extension-appindicator          # the tray: status icons for
+                                               # services that have no GNOME page
+  - gnome-shell-extension-caffeine              # an explicit "keep the screen on"
+  - gnome-shell-extension-tiling-assistant      # window tiling beyond the shell's
+  - gnome-shell-extension-desktop-icons-ng      # Desktop Icons NG (ding@rastersoft.com)
+  - gnome-tweaks                                # the settings GNOME's panels do
+                                               # not expose (fonts, startup apps)
+  - gnome-music                                # a music player; VLC is the
+                                               # declared default for media
+  - vlc                                        # the media player, default for
+                                               # video and audio MIME types
+  - foliate                                    # EPUB reader; without it
+                                               # `application/epub+zip`
+                                               # fell on the archive manager
+  - gnome-logs                                 # the journal, read from the
+                                               # desktop; the account needs the
+                                               # `systemd-journal` group
+
+
+# The default handlers a desktop needs, declared for every account. Without
+# this file a fresh Debian has NO mimeapps.list, and `xdg-open image.png` picks
+# whichever application last claimed the type: measured on the desktop site
+# (2026-11-11), `xdg-mime query default image/png` answered PDF Arranger, so a
+# PNG opened in the PDF assembler instead of the image viewer.
+applications_mimeapps_file: /etc/xdg/mimeapps.list
+applications_mimeapps_defaults:
+  image/png: org.gnome.Loupe.desktop
+  image/jpeg: org.gnome.Loupe.desktop
+  image/gif: org.gnome.Loupe.desktop
+  image/webp: org.gnome.Loupe.desktop
+  image/svg+xml: org.gnome.Loupe.desktop
+  image/tiff: org.gnome.Loupe.desktop
+  image/avif: org.gnome.Loupe.desktop
+  # GNOME's own PDF viewer; PDF Arranger is a page assembler, not a reader.
+  application/pdf: org.gnome.Papers.desktop
+  application/epub+zip: com.github.johnfactotum.Foliate.desktop
+  # Files, text and archives, instead of whichever editor claimed them last.
+  inode/directory: org.gnome.Nautilus.desktop
+  text/plain: org.gnome.TextEditor.desktop
+  text/markdown: org.gnome.TextEditor.desktop
+  text/x-c++: org.gnome.TextEditor.desktop
+  text/english: org.gnome.TextEditor.desktop
+  application/zip: org.gnome.FileRoller.desktop
+  application/x-tar: org.gnome.FileRoller.desktop
+  application/gzip: org.gnome.FileRoller.desktop
+  application/x-7z-compressed: org.gnome.FileRoller.desktop
+  application/x-compressed-tar: org.gnome.FileRoller.desktop
+  # VLC is the declared media player. GNOME's Showtime and Music stay
+  # installed; the default handler is the product's decision, not a leftover.
+  video/mp4: vlc.desktop
+  video/x-matroska: vlc.desktop
+  video/webm: vlc.desktop
+  video/x-msvideo: vlc.desktop
+  video/quicktime: vlc.desktop
+  video/mpeg: vlc.desktop
+  video/mp2t: vlc.desktop
+  video/x-flv: vlc.desktop
+  video/x-ms-wmv: vlc.desktop
+  video/ogg: vlc.desktop
+  video/3gpp: vlc.desktop
+  video/x-m4v: vlc.desktop
+  audio/mpeg: vlc.desktop
+  audio/flac: vlc.desktop
+  audio/x-wav: vlc.desktop
+  audio/ogg: vlc.desktop
+  application/ogg: vlc.desktop
+  audio/mp4: vlc.desktop
+  audio/x-m4a: vlc.desktop
+  audio/aac: vlc.desktop
+  audio/opus: vlc.desktop
+  audio/x-ms-wma: vlc.desktop
+
+# The dash, in order. `dconf` pins the same list; a desktop id here with no
+# `.desktop` file behind it is a hole in the dash, so each one is checked.
+applications_favorite_desktops:
+  - firefox.desktop
+  - org.gnome.Evolution.desktop
+  - org.gnome.Nautilus.desktop
+  - org.gnome.TextEditor.desktop
+  - org.gnome.Ptyxis.desktop
+
+# The extension UUIDs, as the `gnome-shell-extension-*` packages install them
+# (`ubuntu-appindicators@ubuntu.com` is Debian's UUID for the AppIndicator
+# extension, not `appindicatorsupport@...`). `dconf` enables and locks the same
+# four; an extension enabled there and absent here is a shell error at login.
+applications_extension_uuids:
+  - ubuntu-appindicators@ubuntu.com
+  - caffeine@patapon.info
+  - tiling-assistant@leleat-on-github
+  - ding@rastersoft.com
+
+# The browser the product declares, and the one it refuses in its place.
+applications_browser: firefox
+applications_forbidden_browser: firefox-esr
+
+# Mozilla's APT repository. The product owns it: the key is pinned by both its
+# SHA-256 and its fingerprint, the site does not configure a repository and does
+# not install Firefox by hand. The key URL and repository URL are Mozilla's
+# official endpoints; the fingerprint is the trust anchor.
+applications_mozilla_key_url: https://packages.mozilla.org/apt/repo-signing-key.gpg
+applications_mozilla_key_checksum: "sha256:3ecc63922b7795eb23fdc449ff9396f9114cb3cf186d6f5b53ad4cc3ebfbb11f"
+applications_mozilla_key_fingerprint: "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
+applications_mozilla_key_path: /etc/apt/keyrings/packages.mozilla.org.asc
+applications_mozilla_repo_url: https://packages.mozilla.org/apt
+applications_mozilla_repo_suite: mozilla
+applications_mozilla_repo_component: main
+applications_mozilla_repo_file: /etc/apt/sources.list.d/mozilla.list
+
+# Whether the browser is checked at all. True: the browser is a product
+# decision, and a host whose Firefox was replaced by the ESR is a defect.
+applications_assert_firefox: true
+
+# VSCodium moved to the developer role: the `vscodium` group there owns the
+# repository, key and package. The old applications role installed it by
+# default; a site that does not select `vscodium` must not keep the editor.
+# When `vscodium` IS selected, the developer role runs after this one and
+# reinstalls it; this role leaves the package and its repository alone.
+applications_retired_vscodium_package: codium
+applications_retired_vscodium_repo_file: /etc/apt/sources.list.d/vscodium.list
+applications_retired_vscodium_key_path: /etc/apt/keyrings/vscodium.gpg
+
+# The terminal is Ptyxis. `gnome-core` accepts `xdg-terminal-exec` for its
+# terminal alternative, and Ptyxis depends on it, so the duplicate GNOME
+# terminal can be retired after Ptyxis is installed. The Nautilus integration
+# goes with it; a site that wants "Open in Terminal" sets this false.
+applications_retire_gnome_terminal: true
+
+# Where Debian's packaged desktop entries live. The check reads the system
+# directory, not the per-user one: a favorite is resolved for every account.
+applications_desktop_dir: /usr/share/applications
+
+# Where the packages install the extension directories. The converge proves the
+# directory; `gnome-extensions list` needs a session and is the post-login check.
+applications_extension_dir: /usr/share/gnome-shell/extensions

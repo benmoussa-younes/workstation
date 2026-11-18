@@ -1,0 +1,23 @@
+---
+# The console keyboard. The base declares /etc/default/keyboard, but the file
+# does nothing on its own — console-setup owns it, and installing console-setup
+# through pkgsel blocks an unattended install. So the package is installed here,
+# non-interactively, and applied.
+#
+# The layout is the product's default: French, as the operator ordered.
+keyboard_model: pc105
+keyboard_layout: fr
+keyboard_variant: ""
+keyboard_options: ""
+
+# GRUB's keyboard. GRUB runs before the kernel and does not read
+# /etc/default/keyboard: its menu stays US until a layout is compiled with
+# `grub-kbdcomp` (grub-common, using console-setup's ckbcomp) and loaded by a
+# script in /etc/grub.d. The name carries the variant so a changed variant is a
+# new file, regenerated instead of silently reused.
+keyboard_grub_keymap_dir: /boot/grub/keymap
+keyboard_grub_keymap_name: >-
+  {{ keyboard_layout }}{{ ('-' ~ keyboard_variant)
+     if keyboard_variant | length > 0 else '' }}
+keyboard_grub_keymap: "{{ keyboard_grub_keymap_dir }}/{{ keyboard_grub_keymap_name }}.gkb"
+keyboard_grub_script: /etc/grub.d/05_keymap

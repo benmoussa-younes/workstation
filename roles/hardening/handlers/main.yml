@@ -1,0 +1,58 @@
+---
+- name: Apply the kernel settings
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: true
+  when: not ansible_check_mode
+
+# `augenrules --load` merges rules.d into /etc/audit/audit.rules and loads it:
+# the same thing Debian's audit-rules.service does at boot.
+#
+# `--load` only DELETE on the very first rule of the merged file. A host that
+# already has a ruleset in force -- installed by another tool, or by an earlier
+# layout of this role -- therefore receives the new rules ON TOP of the old
+# ones, and any rule present twice fails with "Rule exists". The load is
+# therefore preceded by an explicit flush: the declaration in rules.d is the
+# whole policy, so nothing that is not in it may survive.
+- name: The loaded ruleset is cleared before the declaration is applied
+  ansible.builtin.command:
+    cmd: /usr/sbin/auditctl -D
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Reload the audit rules
+  ansible.builtin.command:
+    cmd: /usr/sbin/augenrules --load
+  changed_when: true
+  when: not ansible_check_mode
+  # The clear handler is defined before this one, so it runs first: a flush
+  # that is declared but never notified leaves duplicate rules in force.
+  notify: The loaded ruleset is cleared before the declaration is applied
+
+- name: Restart auditd
+  ansible.builtin.systemd_service:
+    name: auditd
+    state: restarted
+  # In check mode the package install above is only SIMULATED, so the unit
+  # does not exist yet: naming it fails the dry run (measured on the proof host,
+  # 2026-10-21).
+  when: not ansible_check_mode
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart the disk monitor
+  ansible.builtin.systemd_service:
+    name: smartd
+    state: restarted
+  # Same reason as `auditd`: the package that provides the unit is installed by
+  # another role, and in check mode that install is only SIMULATED.
+  when: not ansible_check_mode
+
+- name: Update grub
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: /usr/sbin/update-grub
+  changed_when: true
+  when: not ansible_check_mode

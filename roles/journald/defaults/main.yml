@@ -1,0 +1,30 @@
+---
+# Bound the systemd journal with a drop-in. Sizes are systemd units; keep them
+# as strings so the values stay readable in the merged configuration.
+journald_dropin_dir: /etc/systemd/journald.conf.d
+# `zz-` on purpose. systemd merges the drop-in directories in PATH order and the
+# LAST value of a key wins: `/usr/lib/systemd/journald.conf.d/syslog.conf` sets
+# `ForwardToSyslog=yes` and sorts after `90-`. Measured on a converted machine
+# (2026-10-20) with `systemd-analyze cat-config`: `90-journald.conf` set `no`,
+# then `syslog.conf` set `yes`, and the journal was forwarded anyway.
+journald_dropin_name: zz-journald.conf
+# Debian's default is `auto`, which is persistent only if `/var/log/journal`
+# happens to exist — the bounds below would then apply to a volatile journal, or
+# not at all. Declare persistence so the size and retention always bite.
+journald_storage: persistent
+journald_system_max_use: "500M"
+journald_system_max_file_size: "50M"
+journald_system_max_files: 10
+journald_max_retention_sec: "1month"
+
+# Debian ships `/usr/lib/systemd/journald.conf.d/syslog.conf` with
+# `ForwardToSyslog=yes`, so every line is written to the journal AND to syslog.
+# Where both are read, each event appears twice, and the syslog copy is the one
+# that is not bounded by this file. The product declares it off; a site that
+# runs rsyslog for another consumer turns it back on.
+journald_forward_to_syslog: false
+
+# Whether the journal is compressed. zstd keeps roughly twice the history for
+# the same size. A collector must then run systemd >= 257: a journal written
+# with zstd is unreadable by an older `journalctl`.
+journald_compress: true

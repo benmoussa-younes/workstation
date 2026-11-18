@@ -1,0 +1,323 @@
+---
+# The account, its desktop groups, its locale and the Bluetooth daemon.
+#
+# Nothing here creates an account: it exists before the desktop is applied, and a
+# role that invented one would invent a password too. Nothing here starts a
+# session either -- the converge runs over SSH, and group membership is read at
+# LOGIN, so the new groups apply to the next session, not to this one.
+
+- name: The account this workstation serves is named
+  ansible.builtin.assert:
+    that:
+      - workstation_user | length > 0
+    fail_msg: >-
+      Declare the human account this workstation serves: `workstation_user` is
+      empty. The product adds the account's desktop groups and locale; it does
+      not create the account.
+
+# `fail_key: false` so the assertion below reports the variable to set, instead
+# of the module's own "one or more supplied key could not be found". A missing
+# key then records the account with a `None` value.
+- name: The declared account is read
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ workstation_user }}"
+    fail_key: false
+
+- name: The account exists
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_passwd[workstation_user] | default(none) is not none
+    fail_msg: >-
+      {{ inventory_hostname }} has no account `{{ workstation_user }}`. Create
+      it at install time, or declare the account that exists: this product never
+      creates an account.
+
+- name: The groups this host declares are read
+  ansible.builtin.getent:
+    database: group
+
+# The effective list: the declared groups the host actually has. Computing it
+# once means the `user` task and the report below cannot disagree.
+- name: The desktop groups this host has are decided
+  ansible.builtin.set_fact:
+    workstation_desktop_groups_present: >-
+      {{ workstation_desktop_groups
+         | select('in', ansible_facts.getent_group.keys() | list) | list }}
+
+- name: The critical desktop groups exist
+  ansible.builtin.assert:
+    that:
+      - >-
+        workstation_desktop_groups_critical
+        | difference(workstation_desktop_groups_present) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} is missing
+      {{ workstation_desktop_groups_critical
+         | difference(workstation_desktop_groups_present) }}. These groups come
+      from the base packages (`adduser`, `udev`, `pipewire`); install the base
+      before the desktop. They are not created here.
+
+- name: The account is in the desktop groups
+  ansible.builtin.user:
+    name: "{{ workstation_user }}"
+    groups: "{{ workstation_desktop_groups_present }}"
+    append: true
+
+# The membership the role declares is read back from the account database, not
+# only printed: `user` can report success while a group name it was given does
+# not exist, and the schema promises this result is checked.
+- name: The account's groups are read back
+  ansible.builtin.command:
+    cmd: id -nG {{ workstation_user }}
+  register: workstation_account_groups
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The account is in every declared desktop group
+  ansible.builtin.assert:
+    that:
+      - >-
+        workstation_desktop_groups_present
+        | difference(workstation_account_groups.stdout.split()) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ workstation_user }} is in
+      {{ workstation_account_groups.stdout.split() }}, missing
+      {{ workstation_desktop_groups_present
+         | difference(workstation_account_groups.stdout.split()) }}.
+  when: not ansible_check_mode
+
+# No re-login is attempted: `loginctl terminate-session` would end the session the
+# operator may be working in, and the converge runs over SSH from a controller.
+# The group change is declared and reported; the operator makes it real by
+# logging out.
+- name: The group change takes effect at the next login
+  ansible.builtin.debug:
+    msg: >-
+      {{ workstation_user }} is now in
+      {{ workstation_desktop_groups_present | join(', ') }}.
+      Group membership is read at LOGIN: the running session keeps the old set
+      until the account logs out and back in. Nothing is restarted here.
+
+# --- the locale --------------------------------------------------------------
+#
+# `locales` (installed by `common`) ships `/etc/locale.gen` with every locale
+# commented out: declaring `LANG=fr_FR.UTF-8` without uncommenting the line is
+# how a machine ends up in `POSIX` while claiming to be French. Both halves are
+# declared, and the generated archive is read back.
+
+- name: The generated locales are read
+  ansible.builtin.command:
+    cmd: locale -a
+  register: workstation_locales_before
+  changed_when: false
+  # Read-only, and needed to decide whether `locale-gen` changes anything: it
+  # runs in check mode too, so `--check` predicts on the real state.
+  check_mode: false
+
+# `locale -a` prints `fr_FR.utf8`; the declared name is `fr_FR.UTF-8`. Comparing
+# the two forms directly would always report a change, so both are normalised
+# once (lower case, no hyphen) instead of in three places.
+- name: The locale names are normalised
+  ansible.builtin.set_fact:
+    workstation_locale_normalised: "{{ workstation_locale | lower | replace('-', '') }}"
+    workstation_locales_normalised: >-
+      {{ workstation_locales_before.stdout | lower | replace('-', '') }}
+
+- name: The declared locale is enabled
+  ansible.builtin.lineinfile:
+    path: "{{ workstation_locale_gen }}"
+    regexp: '^#?\s*{{ workstation_locale | regex_escape }}[[:space:]]'
+    line: "{{ workstation_locale }} {{ workstation_locale_charmap }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: workstation_locale_enabled
+
+# Run on every converge, and reported `changed` only when the line changed or the
+# locale is not in `locale -a`: `locale-gen` regenerates what is missing, so a
+# converged host runs it and reports nothing.
+- name: The locale is generated
+  ansible.builtin.command:
+    cmd: "{{ workstation_locale_gen_command }}"
+  changed_when: >-
+    workstation_locale_enabled is changed
+    or workstation_locale_normalised not in workstation_locales_normalised
+  when: not ansible_check_mode
+
+# The exact shape `update-locale`/`systemd-localed` writes: the generated
+# comment, the quoted `LANG` and the quoted `LANGUAGE`.
+#
+# `follow: true` is the idempotence, not a detail. On Debian
+# `/usr/lib/tmpfiles.d/debian.conf` ships `L+ /etc/default/locale -> ../locale.conf`
+# and recreates that link at every boot. `copy` does NOT follow a destination
+# symlink by default: it replaces the link with a regular file, reports `changed`
+# and leaves the target untouched. The link came back at the next boot and the
+# next converge replaced it again -- measured on the production host
+# (2026-10-27): one change on the first converge after every boot, the file
+# ending byte-identical. With `follow: true` the declaration lands in
+# `/etc/locale.conf` and the distribution's link survives.
+- name: The session's locale is declared
+  ansible.builtin.copy:
+    content: |
+      #  File generated by update-locale
+      LANG="{{ workstation_locale }}"
+      LANGUAGE="{{ workstation_locale_language }}"
+    dest: "{{ workstation_locale_default }}"
+    owner: root
+    group: root
+    mode: "0644"
+    follow: true
+
+- name: The generated locales are read back
+  ansible.builtin.command:
+    cmd: locale -a
+  register: workstation_locales_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: The declared locale is generated
+  ansible.builtin.assert:
+    that:
+      - >-
+        workstation_locale_normalised in
+        (workstation_locales_after.stdout | lower | replace('-', ''))
+    fail_msg: >-
+      {{ inventory_hostname }}: `locale -a` does not list
+      `{{ workstation_locale }}` after `{{ workstation_locale_gen_command }}`.
+      Read `{{ workstation_locale_gen }}`: the line must be uncommented, and the
+      run must not be in check mode.
+  when: not ansible_check_mode
+
+# --- Bluetooth ---------------------------------------------------------------
+#
+# The server base masks `bluetooth.service` with a symlink to /dev/null, and a
+# mask survives the package install: the unit is present and can never start.
+# Only the server's OWN symlink is withdrawn -- a site's regular unit file is
+# left alone. `common` withdraws the same mask earlier on this product; the task
+# stays here so the desktop role never depends on another role's ordering.
+
+- name: The Bluetooth daemon is installed
+  ansible.builtin.apt:
+    name: "{{ workstation_bluez_package }}"
+    state: present
+    cache_valid_time: 3600
+  when: workstation_bluetooth | bool
+
+- name: The Bluetooth mask is read
+  ansible.builtin.stat:
+    path: /etc/systemd/system/{{ workstation_bluetooth_service }}
+  register: workstation_bluetooth_mask
+  when: workstation_bluetooth | bool
+
+- name: The server's Bluetooth mask is withdrawn
+  ansible.builtin.file:
+    path: /etc/systemd/system/{{ workstation_bluetooth_service }}
+    state: absent
+  when:
+    - workstation_bluetooth | bool
+    - workstation_bluetooth_mask.stat.exists
+    - workstation_bluetooth_mask.stat.islnk | default(false)
+    - workstation_bluetooth_mask.stat.lnk_target | default('') == '/dev/null'
+  register: workstation_bluetooth_unmasked
+
+- name: The withdrawn mask is forgotten by systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when:
+    - workstation_bluetooth | bool
+    - workstation_bluetooth_unmasked is changed
+
+# In check mode the package install above is only SIMULATED, so the unit may not
+# exist yet: naming it to systemd fails a dry run (the `common` role records the
+# same measurement). Every read-back below is therefore skipped there.
+- name: The Bluetooth unit's state is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl is-enabled {{ workstation_bluetooth_service }}
+  register: workstation_bluetooth_state
+  changed_when: false
+  failed_when: false
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+
+- name: A lingering Bluetooth mask is lifted
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl unmask {{ workstation_bluetooth_service }}
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+    - workstation_bluetooth_state.stdout | trim == 'masked'
+  changed_when: true
+
+# A host with no radio cannot keep the daemon up: `bluetoothd` starts, finds no
+# adapter and exits, so `state: started` reported a change on every converge
+# (measured on the desktop site, 2026-11-11). The unit is always enabled; it is
+# started only when the kernel exposes an adapter, and the read-back below still
+# proves it is enabled and not masked.
+- name: The Bluetooth adapters are counted
+  ansible.builtin.find:
+    paths: /sys/class/bluetooth
+    patterns: 'hci*'
+    file_type: any
+  register: workstation_bluetooth_adapters
+  changed_when: false
+  check_mode: false
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+
+- name: The Bluetooth daemon is enabled
+  ansible.builtin.systemd_service:
+    name: "{{ workstation_bluetooth_service }}"
+    enabled: true
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+
+- name: The Bluetooth daemon is started when a radio exists
+  ansible.builtin.systemd_service:
+    name: "{{ workstation_bluetooth_service }}"
+    state: started
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+    - (workstation_bluetooth_adapters.matched | default(0)) > 0
+
+- name: The Bluetooth daemon has no radio to serve
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} exposes no Bluetooth adapter. The daemon is
+      enabled and starts at the next boot that finds one; nothing is reported
+      as a change here.
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+    - (workstation_bluetooth_adapters.matched | default(0)) == 0
+
+- name: The Bluetooth unit's state is read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl is-enabled {{ workstation_bluetooth_service }}
+  register: workstation_bluetooth_enabled
+  changed_when: false
+  failed_when: false
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode
+
+- name: The Bluetooth daemon is enabled, not masked
+  ansible.builtin.assert:
+    that:
+      # `is-enabled` answers `masked` for a masked unit, so this one comparison is
+      # the "not masked" check the product needs -- and it rejects anything else
+      # that is not plain `enabled` too.
+      - workstation_bluetooth_enabled.stdout | trim == 'enabled'
+    fail_msg: >-
+      {{ inventory_hostname }}: `systemctl is-enabled
+      {{ workstation_bluetooth_service }}` answers
+      `{{ workstation_bluetooth_enabled.stdout | trim }}`. A masked unit can
+      never start, and GNOME Settings then has no Bluetooth page. Read
+      `/etc/systemd/system/{{ workstation_bluetooth_service }}`.
+  when:
+    - workstation_bluetooth | bool
+    - not ansible_check_mode

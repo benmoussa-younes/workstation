@@ -1,0 +1,40 @@
+---
+# The product's visuals, applied.
+#
+# The Server collection ships the same files as replaceable assets and applies none of
+# them. A desktop is where they are seen, so this role installs them from this
+# product's own `assets/` -- never from another tree -- and points each consumer
+# at its copy:
+#
+#   - the desktop wallpaper, for every account (the `dconf` role selects it);
+#   - GDM's login logo;
+#   - the GRUB menu's image.
+#
+# A path another role owns is READ here, not written: `display` owns GDM's
+# paths, `hardening` owns `/etc/default/grub`.
+
+branding_asset_dir: "{{ role_path }}/../../assets/branding"
+
+# The wallpaper. Installed once, in the shared data directory; the `dconf` role
+# selects it per account and this role owns the file that key names.
+branding_wallpaper_source: "{{ branding_asset_dir }}/workstation-wallpaper.png"
+branding_wallpaper_dir: /usr/share/backgrounds
+branding_wallpaper: /usr/share/backgrounds/workstation-wallpaper.png
+
+# The mark, for GDM. GDM draws the file at its native size: the 256 px raster
+# was visibly too large on the login screen (2026-10-26), so the 64 px mark is
+# installed. The vector source stays in `assets/` for another size.
+branding_logo_source: "{{ branding_asset_dir }}/workstation-logo-64.png"
+branding_gdm_logo_dir: /etc/gdm3/assets
+branding_gdm_logo: /etc/gdm3/assets/logo.png
+
+# The GRUB menu's image. GRUB draws it before the kernel exists, so the file is
+# copied where the bootloader can read it on every filesystem it supports (a
+# plain PNG, not an SVG) and declared in `/etc/default/grub` -- the one file the
+# `hardening` role also writes. The two write DIFFERENT KEYS (`GRUB_BACKGROUND`
+# here, `GRUB_CMDLINE_LINUX_DEFAULT` there), which is why both use `lineinfile`
+# and neither rewrites the file.
+branding_grub_image_source: "{{ branding_asset_dir }}/workstation-grub.png"
+branding_grub_image_dir: /boot/grub
+branding_grub_image: /boot/grub/workstation-grub.png
+branding_grub_default: /etc/default/grub

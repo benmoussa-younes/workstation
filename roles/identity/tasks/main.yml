@@ -1,0 +1,140 @@
+---
+# `/etc/os-release` is this role's own output, so the base is asserted on the
+# marker that branding never touches.
+- name: The Debian base release is read
+  ansible.builtin.slurp:
+    src: /etc/debian_version
+  register: identity_debian_release
+
+- name: The Debian release is read from the marker this role never writes
+  # `/etc/debian_version` holds the release as `<major>.<minor>`, and the codename is derived from it by
+  # the distribution map below. It CANNOT come from `ansible_facts.
+  # distribution_release`: Ansible reads that from `/etc/os-release`, which this
+  # role overwrites, so the second run would read back its own output. Measured
+  # on a converted machine (2026-10-20): `distribution_release` became
+  # `2026-10-20`, the deployment date, and `VERSION_CODENAME` stopped naming a
+  # suite -- which broke every apt source that names one.
+  ansible.builtin.set_fact:
+    identity_debian_major: >-
+      {{ identity_debian_release.content | b64decode | trim | split('.') | first }}
+    identity_debian_release_name: >-
+      {{ {'13': 'trixie'}
+         [identity_debian_release.content | b64decode | trim | split('.') | first]
+         | default('unknown') }}
+
+- name: The Debian release is known to this product
+  # The table above is the product's only distribution table. A new Debian
+  # release is added there once, not in every role; an unknown release is
+  # refused here instead of being guessed.
+  ansible.builtin.assert:
+    that:
+      - identity_debian_release_name != 'unknown'
+    fail_msg: >-
+      {{ inventory_hostname }}: the Debian release is not in the product's
+      distribution table; add it before use.
+
+# A builtin command, not `community.general.dpkg_divert`: this is the repository's
+# only need for a non-builtin module, and `requirements.yml` pins no collections.
+# A collection that is present on one machine and absent in CI is a gate that lies
+# — the role resolves locally and fails the syntax check everywhere else.
+# `creates` on the divert target is what keeps this idempotent.
+- name: The host name is declared
+  ansible.builtin.hostname:
+    name: "{{ identity_hostname }}"
+  when: identity_hostname | length > 0
+
+- name: The distribution os-release file is diverted
+  ansible.builtin.command:
+    cmd: >-
+      dpkg-divert --divert {{ identity_os_release_divert }}
+      --rename {{ identity_os_release_file }}
+    creates: "{{ identity_os_release_divert }}"
+
+- name: The product os-release is present
+  ansible.builtin.template:
+    src: os-release.j2
+    dest: "{{ identity_os_release_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: The login banners are present
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - issue
+    - issue.net
+    - motd
+
+# Debian's dynamic motd prints `uname -snrvm` above the product's `/etc/motd`
+# (`/etc/update-motd.d/10-uname`). The banner already names the product, so the
+# uname line is noise on every SSH login. `run-parts` skips a file without the
+# execute bit, which is how this is disabled without deleting a package file.
+- name: The distribution's dynamic motd line is inspected
+  ansible.builtin.stat:
+    path: "{{ identity_update_motd_scripts }}/10-uname"
+  register: identity_motd_uname
+
+- name: The distribution's dynamic motd line is not executed
+  ansible.builtin.file:
+    path: "{{ identity_update_motd_scripts }}/10-uname"
+    mode: "0644"
+  when: identity_motd_uname.stat.exists
+
+- name: The dynamic motd line is read back
+  ansible.builtin.stat:
+    path: "{{ identity_update_motd_scripts }}/10-uname"
+  register: identity_motd_uname_after
+  when: identity_motd_uname.stat.exists
+
+- name: The motd no longer prints the kernel line
+  ansible.builtin.assert:
+    that:
+      - not identity_motd_uname_after.stat.executable | default(false)
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ identity_update_motd_scripts }}/10-uname is
+      still executable; the login would print `uname` above the product's motd.
+  when:
+    - identity_motd_uname.stat.exists
+    - not ansible_check_mode
+
+# The clone checklist. A cloned image carries the SAME machine-id
+# and host keys on every machine, which breaks logging, DHCP identity and SSH
+# trust. The role asserts the identity is real on THIS host; cross-host
+# uniqueness is a property of the fleet, not of a single converge.
+- name: The machine identity is read
+  ansible.builtin.slurp:
+    src: /etc/machine-id
+  register: identity_machine_id
+
+- name: The machine identity is well formed
+  ansible.builtin.assert:
+    that:
+      - (identity_machine_id.content | b64decode | trim) is match('^[0-9a-f]{32}$')
+      - (identity_machine_id.content | b64decode | trim) != '0' * 32
+    fail_msg: >-
+      {{ inventory_hostname }} has no valid /etc/machine-id: a cloned or
+      uninitialised image. Regenerate it (systemd-machine-id-setup) before use.
+
+- name: The host keys are read
+  ansible.builtin.stat:
+    path: "/etc/ssh/ssh_host_{{ item }}_key"
+  register: identity_host_keys
+  loop:
+    - ed25519
+    - rsa
+    - ecdsa
+
+- name: Every host key is present, root-only
+  ansible.builtin.assert:
+    that:
+      - identity_host_keys.results | rejectattr('stat.exists') | list | length == 0
+      - identity_host_keys.results
+        | map(attribute='stat.mode') | unique | list == ['0600']
+    fail_msg: >-
+      {{ inventory_hostname }} is missing a host key, or one is not mode 0600: a
+      cloned image shares its host keys. Regenerate them (ssh-keygen -A).

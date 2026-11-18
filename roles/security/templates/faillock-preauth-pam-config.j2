@@ -1,0 +1,13 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The `preauth` half of the faillock stack: it must run BEFORE
+# pam_unix, so it is a separate pam-auth-update profile with a HIGHER priority
+# than the `unix` profile (256). The `authfail`/`authsucc` half is the
+# lower-priority `workstation-faillock` profile.
+Name: Workstation faillock preauth
+Default: no
+Priority: 300
+Auth-Type: Primary
+Auth:
+	required pam_faillock.so preauth

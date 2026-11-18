@@ -1,0 +1,7 @@
+// Managed by Ansible; do not edit.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Turn the periodic upgrade on. The apt-daily timers run this; without these
+// flags they would only refresh the package lists and install nothing.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";

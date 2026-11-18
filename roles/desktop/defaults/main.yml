@@ -1,0 +1,82 @@
+---
+# The human account this workstation serves.
+#
+# Three things a fresh Debian install does not do for a desktop account, and
+# this role does: the desktop GROUPS (audio, video, render, input, netdev,
+# bluetooth), the LOCALE (a UTF-8 locale actually generated, not merely
+# configured), and the Bluetooth DAEMON the server base masked.
+#
+# The account itself is NOT created here. A role that invents an account invents
+# a password, a home and an identity; the installer, or the site, owns that. The
+# role asserts the account exists and names the variable to set when it does not.
+#
+# `workstation_user` therefore has NO default: a user name is site data and this
+# product ships none. `meta/argument_specs.yml` declares it required, so a run
+# that does not declare it stops at validation, with the name in the message.
+#
+#   workstation_user: operator
+#
+# The names here are `workstation_*`, not `desktop_*`: AGENTS.md prefixes a role
+# variable with the role name OR with the collection name (`workstation_*`) when
+# the site declares it across roles -- which is the case for the account, the
+# edition, the groups and the locale. `ansible-lint`'s `var-naming[no-role-prefix]`
+# is silenced on each one rather than obeyed; renaming them would break every
+# site's inventory and the assertions in `playbooks/site.yml`.
+
+# The groups a GNOME session needs, in the order they are added.
+#
+#   audio, video, render -- the session's devices. `render` is what PipeWire and
+#     the DRM node use on the current Debian release; `video` alone is not enough for Wayland.
+#   input -- udev's uaccess rules; without it a gamepad, and some touchpads, are
+#     unreadable to the session.
+#   netdev -- the NetworkManager applet's device access.
+#   bluetooth -- BlueZ's D-Bus policy for a session.
+#   cdrom, plugdev -- removable media and USB serial; udisks' policy reads both.
+#
+# Only the groups the host HAS are added: `usermod` fails on a group that does
+# not exist, and a desktop role must not invent one. The tasks compute the
+# effective list from `getent group`.
+workstation_desktop_groups:  # noqa: var-naming[no-role-prefix]
+  - audio
+  - video
+  - render
+  - input
+  - netdev
+  - bluetooth
+  - cdrom
+  - plugdev
+  # GNOME Logs reads the journal through this group; without it the panel opens
+  # with an error and asks for credentials it cannot use.
+  - systemd-journal
+
+# The groups a desktop CANNOT work without. A host missing one is not a desktop,
+# whatever the inventory says: the role fails instead of adding a member to a
+# group that is not there. They come from the base packages (`adduser`, `udev`,
+# `pipewire`), so a missing one means the base was not installed.
+workstation_desktop_groups_critical:  # noqa: var-naming[no-role-prefix]
+  - audio
+  - video
+  - render
+
+# The locale: French, UTF-8. `workstation_locale_language` is the `LANGUAGE=`
+# value -- a colon-separated preference list, not a locale name.
+workstation_locale: fr_FR.UTF-8  # noqa: var-naming[no-role-prefix]
+workstation_locale_language: "fr_FR:fr"  # noqa: var-naming[no-role-prefix]
+
+# The files `locales` owns; `common` installs the package, this role declares the
+# content. `workstation_locale_charmap` is the second column of `/etc/locale.gen`.
+workstation_locale_gen: /etc/locale.gen  # noqa: var-naming[no-role-prefix]
+workstation_locale_charmap: UTF-8  # noqa: var-naming[no-role-prefix]
+workstation_locale_default: /etc/default/locale  # noqa: var-naming[no-role-prefix]
+
+# The generator. Named here so the task reads as a path, not as a PATH lookup:
+# `/usr/sbin` is not in every account's PATH.
+workstation_locale_gen_command: /usr/sbin/locale-gen  # noqa: var-naming[no-role-prefix]
+
+# Bluetooth. The server base masks `bluetooth.service` and relies on `bluez`
+# being absent; a workstation needs the package and an unmasked unit, or GNOME
+# Settings has no Bluetooth page at all. The role runs after the GNOME packages,
+# which is what creates the `bluetooth` group the account is added to.
+workstation_bluetooth: true  # noqa: var-naming[no-role-prefix]
+workstation_bluez_package: bluez  # noqa: var-naming[no-role-prefix]
+workstation_bluetooth_service: bluetooth.service  # noqa: var-naming[no-role-prefix]
