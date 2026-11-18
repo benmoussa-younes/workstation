@@ -39,7 +39,6 @@
   register: hardening_sysctl_existing
 
 - name: The declarations this role and the tuning role own are known
-  # The declarations this role and the tuning role own are known
   # Four files the product writes share the directory; any other file must be
   # named by the site (`hardening_sysctl_kept`) or it is retired. The tuning
   # role owns BOTH `50-performance.conf` (vm.*) and

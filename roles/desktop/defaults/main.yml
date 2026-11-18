@@ -19,7 +19,7 @@
 # The names here are `workstation_*`, not `desktop_*`: AGENTS.md prefixes a role
 # variable with the role name OR with the collection name (`workstation_*`) when
 # the site declares it across roles -- which is the case for the account, the
-# edition, the groups and the locale. `ansible-lint`'s `var-naming[no-role-prefix]`
+# groups and the locale. `ansible-lint`'s `var-naming[no-role-prefix]`
 # is silenced on each one rather than obeyed; renaming them would break every
 # site's inventory and the assertions in `playbooks/site.yml`.
 

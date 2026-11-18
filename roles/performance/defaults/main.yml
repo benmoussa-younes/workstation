@@ -25,8 +25,11 @@ performance_tmpfiles_file: /etc/tmpfiles.d/50-performance.conf
 # that wants a compressed swap declares it in its own role.
 #
 #   none     no swap at all: nothing to tune, but the kind is still declared so
-#            the template renders one consistent file.
+#            the site's record is complete.
 #   disk     a swap partition or file on a disk.
+#
+# Declarative only in this release: no task reads the value. A site that wants a
+# compressed swap declares it in its own role; this one never creates swap.
 performance_swap_kind: disk
 
 performance_swappiness: 10

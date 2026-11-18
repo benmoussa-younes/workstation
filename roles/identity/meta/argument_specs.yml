@@ -17,7 +17,7 @@ argument_specs:
         description: >-
           The product this machine belongs to. One value, because this file
           ships one product; `server` is refused, since it would name the wrong
-          edition on every banner.
+          product on every banner.
       identity_name:
         type: str
         required: false

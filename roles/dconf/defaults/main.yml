@@ -33,7 +33,10 @@ dconf_database: /etc/dconf/db/local
 
 # --- appearance -------------------------------------------------------------
 
-dconf_wallpaper: /usr/share/backgrounds/workstation-wallpaper.png
+# The installed path the `branding` role writes. Declared here with a literal
+# fallback so a tag-limited `dconf` run still converges; a site overrides
+# `branding_wallpaper` and this follows.
+dconf_wallpaper: "{{ branding_wallpaper | default('/usr/share/backgrounds/workstation-wallpaper.png') }}"
 dconf_wallpaper_uri: "file://{{ dconf_wallpaper }}"
 dconf_wallpaper_options: zoom
 dconf_background_shading: solid

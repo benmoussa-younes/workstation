@@ -137,6 +137,13 @@ argument_specs:
         description: >-
           The site's Wi-Fi PSK. Empty reads the installer's ifupdown file. The
           value belongs in the site's vault, never in a tracked product file.
+      network_wifi_psk_is_derived:
+        type: bool
+        required: false
+        description: >-
+          Whether `network_wifi_psk` already is the 64-hex key instead of the
+          passphrase. False derives the key from the passphrase; true uses the
+          value verbatim, for a site that holds a real derived key.
       network_profile_managed:
         type: bool
         required: false

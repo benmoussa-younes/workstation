@@ -21,8 +21,9 @@ and its locale. GNOME on Wayland is the only desktop this product ships.
 - the target's host key in the controller's `known_hosts`;
 - network access to `packages.mozilla.org` and, when `developer_tools` selects
   `dotnet`, `packages.microsoft.com`; `download.vscodium.com` only when it
-  selects `vscodium`; `github.com/benmoussa-younes/scripts` when it selects
-  `scripts`.
+  selects `vscodium`; `github.com` and `api.github.com` when it selects
+  `scripts` and when `coding_agents_opencode_enabled` is true; `opencode.ai`
+  only for that opt-in installer.
 
 Only `ansible.builtin` is used. `requirements.yml` declares no external
 collection.
@@ -45,7 +46,7 @@ sha256sum -c SHA256SUMS
 The collection carries the roles, the playbooks, `meta/`, `assets/` and the
 licence texts. It does not carry an inventory: the site owns its inventory and
 its vault. The source archive carries `inventories/example/`, which documents
-every variable with TEST-NET-1 values only.
+the site-facing variables with TEST-NET-1 values only.
 
 ## Use it
 
@@ -62,7 +63,7 @@ all:
       workstation_user: operator
   vars:
     identity_product: workstation-gnome
-    workstation_desktop_groups: [audio, video, render, input, netdev, bluetooth, cdrom, plugdev]
+    workstation_desktop_groups: [audio, video, render, input, netdev, bluetooth, cdrom, plugdev, systemd-journal]
     workstation_locale: fr_FR.UTF-8
     workstation_locale_language: fr_FR:fr
     developer_tools: [build, debug, clang, dotnet, lint, ansible, python, shell]
@@ -106,12 +107,12 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `network` | NetworkManager owns the link; a Wi-Fi site that handed it over itself is verified, not overwritten. The Wi-Fi key is stored derived from the passphrase, never in clear. |
 | `resolver` | The stub resolver, fed by the link or by a declared filtering resolver. |
 | `time` | Exactly one time daemon and the declared zone. |
-| `gnome` | Debian's `gnome-core` and desktop task, a Wayland session, no second desktop. |
+| `gnome` | Debian's `gnome-core` and desktop task, and a Wayland session. |
 | `desktop` | The account's desktop groups, locale and Bluetooth daemon. |
-| `dconf` | The profile-wide GNOME policy: appearance, wallpaper, screen lock, privacy, extensions and favorites. |
+| `dconf` | The profile-wide GNOME policy: appearance, wallpaper, screen lock, privacy, extensions, favorites and the six application-grid folders. |
 | `applications` | The declared Debian applications (including VLC, default for video/audio MIME), GNOME Shell extensions, GNOME Secrets and Mozilla Firefox. |
 | `developer` | The declared developer tool groups through `developer_tools`, Debian packages, the .NET 10 SDK from Microsoft's pinned repository, the opt-in VSCodium from its pinned repository and the latest Scripts interpreter from its public GitHub release. No editor by default, no dotfile or service. |
-| `coding_agents` | Opt-in OpenCode for the human account: the vendor's installer, pinned by version and SHA-256, the machine-wide `/etc/opencode/opencode.json` and the PATH drop-in. No model, provider or credential is declared. |
+| `coding_agents` | Opt-in OpenCode for the human account (`coding_agents_opencode_enabled`, with `*_version` and `*_install_sha256`): the vendor's installer, pinned by version and SHA-256, the machine-wide `/etc/opencode/opencode.json` and the PATH drop-in. No model, provider or credential is declared. |
 | `gaming` | The opt-in gaming stack: Debian's Steam installer, controller rules, `gamemode`, `mangohud` and the 32-bit mesa/vulkan stack. Steam is proprietary, isolated and opt-in; inert unless `gaming_enabled` is true. |
 | `virtualization` | Optional libvirt/virt-manager and rootless Podman: the local socket, the default NAT network, the default storage pool, the rootless Podman socket, subordinate IDs and the user-namespace setting the rootless engine needs. The `security` role declares the `virbr*` DHCP/DNS/forward/NAT rules; this role requires it in the play. No VM or container is created. The `libvirt` group is root-equivalent. |
 | `fonts` | The declared families, Noto Extra/CJK and the fontconfig proof. |
@@ -159,8 +160,8 @@ plymouth_theme_dir: /usr/share/plymouth/themes/acme
 
 A theme is a directory named like its manifest, and the manifest names the
 script and the image directory by their installed paths. Copy the product's
-theme as the skeleton and keep the three `[Plymouth Theme]` lines consistent
-with `plymouth_theme_dir`:
+theme as the skeleton and keep the `ImageDir`, `ScriptFile` and `ImageFile`
+lines of the `[script]` section consistent with `plymouth_theme_dir`:
 
 ```sh
 cp -r assets/branding/theme/workstation files/theme/acme
@@ -178,6 +179,11 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 - `--check --diff` is a forecast, not proof.
 - A real converge is proved by a second real converge at `changed=0`.
+- A declared address is proved by the boot that uses it: with
+  `network_boot_address` declared and `workstation_reboot_after: true`, the
+  playbook reboots when it is handing the link over, reconnects at the declared
+  address and fails if the link comes back on a DHCP lease. Without the
+  variable, nothing reboots.
 - The visual proof is a console check: the GDM screen, the wallpaper, the boot
   splash and the boot menu are not proved by `--check`.
 - After login, the session proof covers the Wayland session, NetworkManager,

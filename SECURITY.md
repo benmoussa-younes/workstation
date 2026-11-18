@@ -58,7 +58,9 @@ Out of scope:
 
 - It does not create the human account, an SSH key or a sudoers entry.
 - It does not send telemetry.
-- It does not reboot a machine silently.
+- It does not reboot a machine silently: a reboot happens only when the site
+  sets `workstation_reboot_after: true` and declares `network_boot_address`,
+  and the play logs it before it fires.
 - It does not store a secret outside the site vault and the root-only files the
   roles create.
 - It does not install a Flatpak by default.

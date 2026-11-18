@@ -69,7 +69,8 @@ Mozilla Firefox is a separate work under the Mozilla Public License 2.0. The
 repository key is pinned by checksum and fingerprint in
 `roles/applications/defaults/main.yml`.
 
-OpenCode is a separate work under its own upstream licence. The
+OpenCode is a separate work under the MIT licence
+(<https://github.com/sst/opencode>). The
 `coding_agents` role downloads its vendor installer only when the role is
 enabled, verifies the installer against a declared SHA-256, and installs the
 pinned version for the human account; the product neither redistributes nor

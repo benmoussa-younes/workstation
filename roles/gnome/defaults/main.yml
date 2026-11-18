@@ -6,7 +6,7 @@
 # nothing a later decision has to undo. The applications, fonts and themes are
 # decided elsewhere -- this role does not add a package "just in case".
 #
-# GNOME is the product's only desktop: there is no second edition to select.
+# GNOME is the product's only desktop: there is no second desktop to select.
 gnome_packages:
   - gnome-core
   - task-gnome-desktop

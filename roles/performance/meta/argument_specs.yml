@@ -21,7 +21,8 @@ argument_specs:
         required: false
         description: >-
           The kind of swap the host has. `disk` is a partition or file on a
-          disk; `none` declares no swap. zram is not implemented in this release.
+          disk; `none` declares no swap. Declarative only in this release: no
+          task reads it, and zram is not implemented.
         choices: [disk, none]
       performance_swappiness:
         type: int

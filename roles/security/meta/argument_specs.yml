@@ -108,8 +108,8 @@ argument_specs:
         required: false
         description: >-
           The groups whose members may log in over SSH. An allowlist, not a
-          key", which is the wrong end state even when it is the safe default.
-          - sudo
+          key: sshd checks the group at login, so removing a member closes that
+          access. Defaults to `sudo`.
       security_password_min_length:
         type: int
         required: false

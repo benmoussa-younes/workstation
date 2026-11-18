@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   made the access point refuse the association. A site that holds a real derived
   key says so with `network_wifi_psk_is_derived: true`. The ifupdown backup is
   written with the derived key, never the passphrase.
+- A declared address is proved by the boot that uses it: with
+  `network_boot_address` declared and `workstation_reboot_after: true`, the
+  playbook flushes its handlers, reboots once the link is handed to
+  NetworkManager, reconnects at the declared address and fails on a DHCP lease.
+  Nothing reboots unless the site asks for it.
+- GRUB's menu title is the product's, not Debian's: `hardening` replaces the
+  `GRUB_DISTRIBUTOR` literal and rebuilds the menu, then reads the result back.
 - The `security` role declares the libvirt bridge DHCP/DNS/forward/NAT rules
   when `virtualization_enabled`; `virtualization` requires `security` in the
   play. The `desktop` role adds the `systemd-journal` group for GNOME Logs, and
