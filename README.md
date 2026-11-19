@@ -37,7 +37,7 @@ ships.
 - **An optional local hypervisor**: libvirt/virt-manager and rootless Podman,
   with the firewall rules their bridges need.
 - **A security baseline**: nftables input default-deny with SSH restricted to
-  your sources, a hardened sshd, a password policy, kernel and audit
+  your sources, a hardened sshd and SSH client, a password policy, kernel and audit
   hardening — and Avahi retired rather than half-configured.
 - **Provable by construction**: every role reads its own change back, a second
   converge must print `changed=0`, and a declared address is proved by the boot

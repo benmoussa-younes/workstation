@@ -1,0 +1,54 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A system-wide client drop-in, not a rewrite: Debian's /etc/ssh/ssh_config
+# includes /etc/ssh/ssh_config.d/*.conf before its `Host *` block, and
+# ssh_config keeps the FIRST value it reads. This file therefore wins for every
+# account, without a file in any home. A user's ~/.ssh/config is read first and
+# can still override it; that limit is documented in roles/README.md.
+
+# openssh-client 1:10.0p1-7+deb13u4 marks sessions Expedited Forwarding (DSCP
+# EF, TOS 0xB8). On the 2026-11-19 path every EF SYN was dropped: `ssh -T
+# git@github.com` timed out (rc=255), while `IPQoS=none` authenticated. Clearing
+# the marking is the fix; `0x00` is refused by OpenSSH 10, and the TOS keywords
+# are deprecated upstream in 10.1 (ignored there).
+IPQoS none
+
+# Key exchange: the post-quantum hybrid first, then the Curve25519 forms, then
+# NIST ECDH for older peers; SHA-1 and DH group exchange are gone.
+KexAlgorithms {{ security_ssh_client_kex_algorithms | join(',') }}
+
+# AEAD ciphers only: no CBC, no CTR, no 3DES.
+Ciphers {{ security_ssh_client_ciphers | join(',') }}
+
+# Encrypt-then-MAC SHA-2 only: the HMAC-SHA1 and UMAC forms are retired.
+MACs {{ security_ssh_client_macs | join(',') }}
+
+# Host keys: Ed25519 and RSA/SHA-2 only; an ECDSA-only or SHA-1-only host is
+# refused on purpose.
+HostKeyAlgorithms {{ security_ssh_client_host_key_algorithms | join(',') }}
+
+# User keys follow the same rule, so a key that only offers SHA-1 cannot
+# authenticate.
+PubkeyAcceptedAlgorithms {{ security_ssh_client_pubkey_accepted_algorithms | join(',') }}
+
+# No forwarding surface a client does not need: an agent or an X11 socket is a
+# credential a remote host could use, and a local command is server-controlled.
+ForwardAgent no
+ForwardX11 no
+ForwardX11Trusted no
+PermitLocalCommand no
+
+# Hash the host names written to known_hosts: an unhashed file lists every host
+# the account has visited.
+HashKnownHosts yes
+
+# The product's SSH path is key-only; a console password stays a console
+# convenience, and KbdInteractiveAuthentication is the same network surface.
+PubkeyAuthentication yes
+PasswordAuthentication {{ 'yes' if security_ssh_client_password_authentication | bool else 'no' }}
+KbdInteractiveAuthentication {{ 'yes' if security_ssh_client_password_authentication | bool else 'no' }}
+
+# StrictHostKeyChecking is deliberately NOT set: it stays at Debian's `ask`,
+# which refuses an unknown host instead of trusting it silently. This file never
+# relaxes it; a site that needs `accept-new` does so in its own file.

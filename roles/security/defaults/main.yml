@@ -100,7 +100,7 @@ security_sshd_allow_groups:
 # The password policy. It bites only when a password is set: the product's
 # accounts are key-only, so this governs the day a human deliberately makes one.
 # The audit found PASS_MAX_DAYS 99999 and no pwquality at all.
-security_password_min_length: 12
+security_password_min_length: 14
 security_password_max_days: 365
 security_password_min_days: 1
 security_password_warn_days: 7
@@ -132,3 +132,40 @@ security_sshd_service_dropin: "{{ security_sshd_service_dropin_dir }}/10-worksta
 # must be a DECISION, not an omission.
 security_ssh_sources_required: true
 security_ssh_sources_anywhere: false
+
+# The SSH client policy. Debian's /etc/ssh/ssh_config includes
+# /etc/ssh/ssh_config.d/*.conf before its own `Host *` block, and ssh_config
+# keeps the FIRST value it reads: this drop-in wins for every account, without a
+# file in any home. A user's ~/.ssh/config is read first and can still override
+# it; that limit is documented in roles/README.md.
+security_ssh_client_config_file: /etc/ssh/ssh_config.d/99-workstation.conf
+
+# The lists are a whitelist, not a suggestion. The role checks every entry
+# against the installed `ssh -Q` lists BEFORE it writes the file, so a client
+# that cannot read its own policy never receives one.
+security_ssh_client_kex_algorithms:
+  - sntrup761x25519-sha512@openssh.com
+  - curve25519-sha256
+  - ecdh-sha2-nistp256
+  - ecdh-sha2-nistp384
+  - ecdh-sha2-nistp521
+security_ssh_client_ciphers:
+  - chacha20-poly1305@openssh.com
+  - aes256-gcm@openssh.com
+  - aes128-gcm@openssh.com
+security_ssh_client_macs:
+  - hmac-sha2-512-etm@openssh.com
+  - hmac-sha2-256-etm@openssh.com
+security_ssh_client_host_key_algorithms:
+  - ssh-ed25519
+  - rsa-sha2-512
+  - rsa-sha2-256
+security_ssh_client_pubkey_accepted_algorithms:
+  - ssh-ed25519
+  - rsa-sha2-512
+  - rsa-sha2-256
+
+# The escape hatch for a site that still needs a network password (an OTP or a
+# legacy bastion): `true` enables PasswordAuthentication and
+# KbdInteractiveAuthentication together. The default is key-only.
+security_ssh_client_password_authentication: false

@@ -1,15 +1,15 @@
 ---
 argument_specs:
   main:
-    short_description: The inbound firewall, sshd and the password policy.
+    short_description: The inbound firewall, the SSH server and client policies, and the password policy.
     description:
       - >-
         An nftables ruleset owned by this role, loaded from
         `/etc/nftables.d/` after the site's `/etc/nftables.conf`, with a
         default-deny `input` policy and a declared `forward` chain. It never
         writes the package conffile and never runs `flush ruleset`, which would
-        wipe another manager's chains. The role also owns the sshd drop-in and
-        the password and lockout policies.
+        wipe another manager's chains. The role also owns the sshd drop-in, the
+        system-wide SSH client drop-in and the password and lockout policies.
     author: Younes BENMOUSSA
     options:
       security_retire_ufw:
@@ -162,3 +162,76 @@ argument_specs:
         type: str
         required: false
         description: The security_sshd_service_dropin_dir the role declares (defaults/main.yml).
+      security_ssh_client_config_file:
+        type: str
+        required: false
+        default: /etc/ssh/ssh_config.d/99-workstation.conf
+        description: >-
+          The system-wide SSH client drop-in. Debian includes
+          `/etc/ssh/ssh_config.d/*.conf` before its own `Host *` block, so this
+          file applies to every account without a file in a home; a user's
+          `~/.ssh/config` can still override it.
+      security_ssh_client_kex_algorithms:
+        type: list
+        elements: str
+        required: false
+        default:
+          - sntrup761x25519-sha512@openssh.com
+          - curve25519-sha256
+          - ecdh-sha2-nistp256
+          - ecdh-sha2-nistp384
+          - ecdh-sha2-nistp521
+        description: >-
+          The KEX whitelist. Every entry must appear in the target's
+          `ssh -Q kex`, or the role fails before writing the file.
+      security_ssh_client_ciphers:
+        type: list
+        elements: str
+        required: false
+        default:
+          - chacha20-poly1305@openssh.com
+          - aes256-gcm@openssh.com
+          - aes128-gcm@openssh.com
+        description: >-
+          The cipher whitelist (AEAD only). Every entry must appear in the
+          target's `ssh -Q cipher`, or the role fails before writing the file.
+      security_ssh_client_macs:
+        type: list
+        elements: str
+        required: false
+        default:
+          - hmac-sha2-512-etm@openssh.com
+          - hmac-sha2-256-etm@openssh.com
+        description: >-
+          The MAC whitelist (encrypt-then-MAC SHA-2 only). Every entry must
+          appear in the target's `ssh -Q mac`, or the role fails before writing
+          the file.
+      security_ssh_client_host_key_algorithms:
+        type: list
+        elements: str
+        required: false
+        default:
+          - ssh-ed25519
+          - rsa-sha2-512
+          - rsa-sha2-256
+        description: >-
+          The host-key whitelist. Every entry must appear in the target's
+          `ssh -Q key-sig`; an ECDSA-only or SHA-1-only host is refused.
+      security_ssh_client_pubkey_accepted_algorithms:
+        type: list
+        elements: str
+        required: false
+        default:
+          - ssh-ed25519
+          - rsa-sha2-512
+          - rsa-sha2-256
+        description: >-
+          The user-key whitelist. Every entry must appear in the target's
+          `ssh -Q key-sig`; a key that only offers SHA-1 is refused.
+      security_ssh_client_password_authentication:
+        type: bool
+        required: false
+        default: false
+        description: >-
+          Enable PasswordAuthentication and KbdInteractiveAuthentication for a
+          site that still needs a network password. The default is key-only.
