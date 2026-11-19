@@ -150,3 +150,7 @@ jobs:
               --notes-file release-notes.md \
               dist/*
           fi
+
+          # A release created by an earlier attempt can still be a draft: this
+          # job publishes what it uploaded instead of leaving that to a human.
+          gh release edit "$TAG" --draft=false
