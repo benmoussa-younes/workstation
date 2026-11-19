@@ -100,7 +100,7 @@ security_sshd_allow_groups:
 # The password policy. It bites only when a password is set: the product's
 # accounts are key-only, so this governs the day a human deliberately makes one.
 # The audit found PASS_MAX_DAYS 99999 and no pwquality at all.
-security_password_min_length: 12
+security_password_min_length: 14
 security_password_max_days: 365
 security_password_min_days: 1
 security_password_warn_days: 7

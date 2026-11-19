@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ssh-rsa`/CBC/CTR-only peer is refused. SSH certificate authentication is
   refused too: the lists carry no `*-cert-v01@openssh.com` name. A site that
   needs one of them overrides the `security_ssh_client_*` lists.
+- The workstation password quality policy now matches the server's: `minlen`
+  14, `minclass` 4, `maxsequence` 3, `difok` 2, `dictcheck` 1, `enforcing` 1 and
+  `enforce_for_root`. `libpam-pwquality` and the `common-password` line were
+  already in place; the template was the weaker half.
 
 ## [0.1.0] - 2026-11-18
 
