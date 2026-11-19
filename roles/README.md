@@ -29,7 +29,15 @@ a new role is added to this table in the same change that creates it.
 | `display` | GDM: the unit, `WaylandEnable` in `daemon.conf`, the greeter's logo key, the seat read back. Never a hand-made `display-manager.service` alias. | implemented |
 | `plymouth` | The Workstation boot splash: the theme, its boot/shutdown/reboot messages, its selection and the initramfs, read back. | implemented |
 | `branding` | The wallpaper, GDM's logo and GRUB's image, from this product's own assets. | implemented |
-| `security` | nftables input policy, sshd, the password and lockout policy; with `virtualization_enabled`, the libvirt bridge DHCP/DNS/forward/NAT rules. | implemented |
+| `security` | nftables input policy, sshd, the system-wide SSH client drop-in, the password and lockout policy; with `virtualization_enabled`, the libvirt bridge DHCP/DNS/forward/NAT rules. | implemented |
+
+The `security` role also writes `/etc/ssh/ssh_config.d/99-workstation.conf`. Debian
+includes that directory before its own `Host *` block, and `ssh_config` keeps the
+first value it reads, so the drop-in applies to every account without a file in
+any home. A user's `~/.ssh/config` is still read before the system files and can
+override it: the drop-in is the product's policy, not a guarantee against a
+user's own file.
+
 A role is `implemented` once its tasks, defaults and `meta/argument_specs.yml`
 exist and a converge proves it; the evidence is the gate and the converge.
 A role that cannot work without a value declares it and fails loudly; it never

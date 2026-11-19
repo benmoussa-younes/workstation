@@ -371,6 +371,166 @@
 - name: The sshd hardening is applied now
   ansible.builtin.meta: flush_handlers
 
+# --- the SSH CLIENT policy ---------------------------------------------------
+#
+# A client policy its own ssh cannot parse would take every outbound SSH use
+# away from the account, and a typo is invisible until the next git push. The
+# installed client is therefore asked what it supports BEFORE the file is
+# written, and an unknown name fails the converge with the name in the message.
+# The template's validate is the second guard; `--check` is not a proof.
+- name: The SSH client's supported key exchanges are read
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -Q kex
+  register: security_ssh_client_supported_kex
+  changed_when: false
+  check_mode: false
+
+- name: The SSH client's supported ciphers are read
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -Q cipher
+  register: security_ssh_client_supported_ciphers
+  changed_when: false
+  check_mode: false
+
+- name: The SSH client's supported MACs are read
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -Q mac
+  register: security_ssh_client_supported_macs
+  changed_when: false
+  check_mode: false
+
+- name: The SSH client's supported key algorithms are read
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -Q key-sig
+  register: security_ssh_client_supported_keys
+  changed_when: false
+  check_mode: false
+
+- name: The unsupported SSH client algorithms are computed
+  ansible.builtin.set_fact:
+    security_ssh_client_unsupported: >-
+      {{ (security_ssh_client_kex_algorithms
+          | difference(security_ssh_client_supported_kex.stdout_lines))
+         + (security_ssh_client_ciphers
+            | difference(security_ssh_client_supported_ciphers.stdout_lines))
+         + (security_ssh_client_macs
+            | difference(security_ssh_client_supported_macs.stdout_lines))
+         + (security_ssh_client_host_key_algorithms
+            | difference(security_ssh_client_supported_keys.stdout_lines))
+         + (security_ssh_client_pubkey_accepted_algorithms
+            | difference(security_ssh_client_supported_keys.stdout_lines)) }}
+
+- name: The SSH client policy is one the installed client can read
+  ansible.builtin.assert:
+    that:
+      - security_ssh_client_kex_algorithms | length > 0
+      - security_ssh_client_ciphers | length > 0
+      - security_ssh_client_macs | length > 0
+      - security_ssh_client_host_key_algorithms | length > 0
+      - security_ssh_client_pubkey_accepted_algorithms | length > 0
+      - security_ssh_client_unsupported | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: the SSH client policy names algorithms this
+      client does not support:
+      {{ security_ssh_client_unsupported | join(', ') }}. Check `ssh -V`,
+      `ssh -Q kex`, `ssh -Q cipher`, `ssh -Q mac` and `ssh -Q key-sig`; the role
+      wrote nothing.
+
+- name: The SSH client drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ security_ssh_client_config_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The SSH client hardening drop-in is in place
+  ansible.builtin.template:
+    src: ssh-client-security.conf.j2
+    dest: "{{ security_ssh_client_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/bin/ssh -G -F %s localhost
+
+# A drop-in this role does not declare and no package owns can sort before ours
+# (a `98-*.conf` is read before `99-workstation.conf`) and win every directive it
+# repeats. It is retired -- renamed, never deleted -- and only when no package
+# owns it, so a distribution file is not this role's to remove.
+- name: The SSH client drop-ins already present are listed
+  ansible.builtin.find:
+    paths: "{{ security_ssh_client_config_file | dirname }}"
+    patterns: "*.conf"
+    file_type: file
+  register: security_ssh_client_existing
+
+- name: The SSH client drop-in this role declares is kept
+  ansible.builtin.set_fact:
+    security_ssh_client_declared:
+      - "{{ security_ssh_client_config_file }}"
+
+- name: The SSH client drop-ins are attached to a package, or not
+  ansible.builtin.command:
+    cmd: dpkg-query -S {{ item }}
+  loop: >-
+    {{ security_ssh_client_existing.files | map(attribute='path')
+       | reject('search', '\.retired-')
+       | reject('in', security_ssh_client_declared)
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+  register: security_ssh_client_owner
+  changed_when: false
+  failed_when: false
+
+- name: The SSH client drop-ins no package owns are retired
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
+  loop: "{{ security_ssh_client_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  changed_when: true
+
+# Writing the file is not the proof: the installed client must report the
+# policy, and the package's ssh_config must include the directory that holds it.
+- name: The effective SSH client policy is read
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -G -F {{ security_ssh_client_config_file }} localhost
+  register: security_ssh_client_effective
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: The SSH client policy is what the client reports
+  ansible.builtin.assert:
+    that:
+      - "'ipqos none none' in security_ssh_client_effective.stdout"
+      - >-
+        'kexalgorithms ' ~ (security_ssh_client_kex_algorithms | join(','))
+        in security_ssh_client_effective.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: `ssh -G -F {{ security_ssh_client_config_file }}`
+      does not report the declared IPQoS and KEX policy.
+  when: not ansible_check_mode
+
+- name: The system SSH configuration is read
+  ansible.builtin.slurp:
+    src: /etc/ssh/ssh_config
+  register: security_ssh_client_system_config
+  when: not ansible_check_mode
+
+- name: The system SSH configuration includes the drop-in directory
+  ansible.builtin.assert:
+    that:
+      - >-
+        'Include /etc/ssh/ssh_config.d/*.conf'
+        in (security_ssh_client_system_config.content | b64decode)
+    fail_msg: >-
+      {{ inventory_hostname }}: /etc/ssh/ssh_config does not include
+      /etc/ssh/ssh_config.d/*.conf, so the client drop-in is not read.
+  when: not ansible_check_mode
+
 - name: The password quality policy is installed
   ansible.builtin.apt:
     name: libpam-pwquality
