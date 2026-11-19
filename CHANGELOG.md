@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Plymouth LUKS password bullets no longer overlap. The dot asset carried a
+  17x17 px disc on a 10.5 px step, so consecutive bullets cut into each other;
+  it now keeps the 10x10 px upstream geometry at +6+5, which leaves a gap and
+  restores the field's proportion.
+
 ## [0.1.0] - 2026-11-18
 
 ### Added
