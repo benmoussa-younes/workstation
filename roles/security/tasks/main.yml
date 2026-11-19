@@ -509,9 +509,27 @@
       - >-
         'kexalgorithms ' ~ (security_ssh_client_kex_algorithms | join(','))
         in security_ssh_client_effective.stdout
+      - "'ciphers ' ~ (security_ssh_client_ciphers | join(',')) in security_ssh_client_effective.stdout"
+      - "'macs ' ~ (security_ssh_client_macs | join(',')) in security_ssh_client_effective.stdout"
+      - >-
+        'hostkeyalgorithms '
+        ~ (security_ssh_client_host_key_algorithms | join(','))
+        in security_ssh_client_effective.stdout
+      - >-
+        'pubkeyacceptedalgorithms '
+        ~ (security_ssh_client_pubkey_accepted_algorithms | join(','))
+        in security_ssh_client_effective.stdout
+      - "'forwardagent no' in security_ssh_client_effective.stdout"
+      - "'hashknownhosts yes' in security_ssh_client_effective.stdout"
+      - >-
+        ('passwordauthentication yes' if security_ssh_client_password_authentication | bool
+         else 'passwordauthentication no') in security_ssh_client_effective.stdout
+      - >-
+        ('kbdinteractiveauthentication yes' if security_ssh_client_password_authentication | bool
+         else 'kbdinteractiveauthentication no') in security_ssh_client_effective.stdout
     fail_msg: >-
       {{ inventory_hostname }}: `ssh -G -F {{ security_ssh_client_config_file }}`
-      does not report the declared IPQoS and KEX policy.
+      does not report the declared SSH client policy.
   when: not ansible_check_mode
 
 - name: The system SSH configuration is read

@@ -10,8 +10,8 @@
 # openssh-client 1:10.0p1-7+deb13u4 marks sessions Expedited Forwarding (DSCP
 # EF, TOS 0xB8). On the 2026-11-19 path every EF SYN was dropped: `ssh -T
 # git@github.com` timed out (rc=255), while `IPQoS=none` authenticated. Clearing
-# the marking is the fix; `0x00` is refused by OpenSSH 10 and the TOS keywords
-# are deprecated.
+# the marking is the fix; `0x00` is refused by OpenSSH 10, and the TOS keywords
+# are deprecated upstream in 10.1 (ignored there).
 IPQoS none
 
 # Key exchange: the post-quantum hybrid first, then the Curve25519 forms, then

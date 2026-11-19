@@ -27,8 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file in any home; a user's `~/.ssh/config` is read first and can still
   override it.
 - Compatibility: an ECDSA-only host key, an ECDSA user key or a legacy
-  `ssh-rsa`/CBC/CTR-only peer is refused. A site that needs one of them
-  overrides the `security_ssh_client_*` lists.
+  `ssh-rsa`/CBC/CTR-only peer is refused. SSH certificate authentication is
+  refused too: the lists carry no `*-cert-v01@openssh.com` name. A site that
+  needs one of them overrides the `security_ssh_client_*` lists.
 
 ## [0.1.0] - 2026-11-18
 
