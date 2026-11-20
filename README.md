@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.1.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0)
+[![Release](https://img.shields.io/badge/release-0.2.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.2.0)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -47,7 +47,7 @@ ships.
 
 | The application grid | The system panel |
 |---|---|
-| ![Applications grouped into folders](assets/screenshots/app-grid.png) | ![The About panel: Workstation Edition 0.1.0, GNOME 48, Wayland](assets/screenshots/about.png) |
+| ![Applications grouped into folders](assets/screenshots/app-grid.png) | ![The About panel: Workstation Edition, GNOME 48, Wayland](assets/screenshots/about.png) |
 | **The workspace switcher** | **A GNOME desktop, not a skin** |
 | ![Workspaces over the emerald wallpaper](assets/screenshots/workspaces.png) | ![The desktop with the product wallpaper](assets/screenshots/desktop.png) |
 
@@ -74,10 +74,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.1.0.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.2.0.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.1.0-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.2.0-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -232,7 +232,7 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 ## Project status
 
-`0.1.0` is the first release. Debian amd64 is the only supported base; a newer
+`0.2.0` is the current release. Debian amd64 is the only supported base; a newer
 Debian release is added when the product declares it. The product is maintained
 by one author; there is no support contract, service level or warranty, express
 or implied (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md)).
