@@ -8,7 +8,13 @@
 #
 # Both files are `nft -f` scripts. The product's file deletes and recreates only
 # its own table, so a site table is preserved.
+#
+# `systemctl reload nftables` follows the distribution's `ExecReload`, which
+# loads only `/etc/nftables.conf`. That file starts with `flush ruleset`, so a
+# reload wiped the product table and left the workstation unfiltered. The reload
+# list is cleared: a reload is refused instead of changing the firewall.
 [Service]
 ExecStart=
 ExecStart=/usr/sbin/nft -f /etc/nftables.conf
 ExecStart=/usr/sbin/nft -f {{ security_nftables_file }}
+ExecReload=

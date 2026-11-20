@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-20
+
+### Security
+
+- The nftables drop-in now clears `ExecReload` as well as `ExecStart`. The
+  distribution's reload loaded only `/etc/nftables.conf`, whose `flush ruleset`
+  removed the product table; a `systemctl reload nftables` now fails instead of
+  leaving the workstation without its firewall.
+
 ## [0.2.0] - 2026-11-19
 
 ### Fixed
