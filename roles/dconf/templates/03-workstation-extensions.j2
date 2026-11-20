@@ -9,6 +9,6 @@
 # dconf merges them into one database (verified with `dconf compile` + `dconf
 # read` on the reference workstation, 2026-10-26).
 [org/gnome/shell]
-enabled-extensions=[{{ dconf_extensions | map('regex_replace', '^(.+)$', "'\\1'") | join(', ') }}]
+enabled-extensions={% if dconf_extensions | length > 0 %}[{{ dconf_extensions | map('regex_replace', '^(.+)$', "'\\1'") | join(', ') }}]{% else %}@as []{% endif %}
 disable-user-extensions=true
 allow-extension-installation={{ dconf_allow_extension_installation | bool | lower }}
