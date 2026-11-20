@@ -133,6 +133,7 @@
     owner: root
     group: root
     mode: "0644"
+    create: true
   notify: Restart GDM
 
 - name: The autologin is declared

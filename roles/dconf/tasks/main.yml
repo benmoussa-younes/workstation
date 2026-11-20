@@ -73,18 +73,24 @@
 # The role therefore refuses to converge over a policy it does not own, and names
 # the files. Removing them is the operator's call: a left-over file may hold a
 # site's value, which this product will not silently discard.
+- name: The dconf database directory is known
+  ansible.builtin.stat:
+    path: "{{ dconf_db_dir }}"
+  register: dconf_db_dir_state
+
 - name: The keyfiles already in the database are listed
   ansible.builtin.find:
     paths: "{{ dconf_db_dir }}"
     file_type: file
     recurse: false
   register: dconf_existing_keyfiles
+  when: dconf_db_dir_state.stat.isdir | default(false)
 
 - name: The dconf database holds only the declared policy
   ansible.builtin.assert:
     that:
       - >-
-        dconf_existing_keyfiles.files | map(attribute='path') | map('basename')
+        dconf_existing_keyfiles.files | default([]) | map(attribute='path') | map('basename')
         | difference(dconf_keyfiles | map(attribute='dest') | list) | length == 0
     fail_msg: >-
       {{ inventory_hostname }}: a keyfile this product does not declare is in

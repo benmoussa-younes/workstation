@@ -173,13 +173,18 @@
 # (2026-10-20): a drop-in left by that machine's previous configuration sorted
 # after `10-workstation.conf` and won BOTH keys -- `DNSSEC=no` and `Domains=~.` --
 # while the role reported success and `resolvectl` showed the other policy.
+- name: The resolver drop-in directory is known
+  ansible.builtin.stat:
+    path: "{{ resolver_conf_dir }}"
+  register: resolver_conf_dir_state
+
 - name: The resolver drop-ins already present are listed
   ansible.builtin.find:
     paths: "{{ resolver_conf_dir }}"
     patterns: "*.conf"
     file_type: file
   register: resolver_existing
-  when: resolver_conf_dir is directory
+  when: resolver_conf_dir_state.stat.isdir | default(false)
 
 - name: The resolver drop-ins are attached to a package, or not
   ansible.builtin.command:

@@ -714,13 +714,23 @@
 # file. The derived key is what the radio uses, so every file that still carries
 # the passphrase is rewritten with it. The helper reports per file and never
 # prints a value.
+- name: The Wi-Fi key directories are known
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ network_wpa_psk_search_paths }}"
+  register: network_psk_dirs
+
 - name: The files that may carry a Wi-Fi key are listed
   ansible.builtin.find:
-    paths: "{{ network_wpa_psk_search_paths | select('directory') | list }}"
+    paths: >-
+      {{ network_psk_dirs.results | selectattr('stat.isdir', 'defined')
+         | selectattr('stat.isdir') | map(attribute='item') | list }}
     patterns: "{{ network_wpa_psk_search_patterns }}"
     file_type: file
   register: network_psk_files
-  when: (network_wpa_psk_search_paths | select('directory') | list) | length > 0
+  when: >-
+    (network_psk_dirs.results | selectattr('stat.isdir', 'defined')
+     | selectattr('stat.isdir') | map(attribute='item') | list) | length > 0
 
 - name: The Wi-Fi passphrase is retired from every file that carried it
   ansible.builtin.command:  # noqa: command-instead-of-module
