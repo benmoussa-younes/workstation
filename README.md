@@ -229,6 +229,15 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 ## Project status
 
+## Migration from 0.2.x
+
+`0.3.0` removed the optional `virtualization` role (libvirt, virt-manager and
+rootless Podman). A site that set `virtualization_enabled: true` declares the
+stack with the `virtualization` and `container` products instead; the
+workstation keeps the firewall, SSH, account and desktop policy. The `virbr*`
+and `libvirt_nat` rules, the `virt-manager` favorite and `qemu-guest-agent` were
+removed with the role.
+
 `0.3.0` is the current release. Debian amd64 is the only supported base; a newer
 Debian release is added when the product declares it. The product is maintained
 by one author; there is no support contract, service level or warranty, express
