@@ -10,5 +10,5 @@
 # read` on the reference workstation, 2026-10-26).
 [org/gnome/shell]
 enabled-extensions=[{{ dconf_extensions | map('regex_replace', '^(.+)$', "'\\1'") | join(', ') }}]
-disable-user-extensions=false
+disable-user-extensions=true
 allow-extension-installation={{ dconf_allow_extension_installation | bool | lower }}

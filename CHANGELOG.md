@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-20
+
+### Security
+
+- The sshd drop-in declares `RequiredRSASize 2048` and the algorithm lists:
+  MACs, ciphers, KEX, host-key and public-key algorithms no longer fall back to
+  Debian's defaults that still admit `hmac-sha1`, `umac-64` and 1024-bit RSA.
+- The `common` absent list now removes `htop`, the Java runtime and the Commons
+  Collections 3 gadget that `libreoffice`'s Recommends pulled in; the office
+  suite stays.
+
+### Fixed
+
+- `network`: the invalid `wifi.cloned-mac-address` key is removed (the
+  NetworkManager warning and the silent no-op go with it).
+- `dconf`: `disable-user-extensions=true`; the four declared extensions can no
+  longer be switched off by the account.
+
 ## [0.2.1] - 2026-11-20
 
 ### Security
