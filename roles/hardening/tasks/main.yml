@@ -47,16 +47,13 @@
   # owning its own namespace. The opt-in `gaming` role owns
   # `61-gaming-userns.conf`: without it here, this role renamed the file the
   # gaming role had just written, and every converge reported the pair as a
-  # change (measured on the desktop site, 2026-11-11). The optional
-  # `virtualization` role owns `62-podman-userns.conf` for the same reason:
-  # rootless Podman needs the setting this role disables.
+  # change (measured on the desktop site, 2026-11-11).
   ansible.builtin.set_fact:
     hardening_sysctl_declared: >-
       {{ [hardening_sysctl_file,
           (hardening_sysctl_file | dirname) ~ '/50-performance.conf',
           (hardening_sysctl_file | dirname) ~ '/51-performance-network.conf',
-          (hardening_sysctl_file | dirname) ~ '/61-gaming-userns.conf',
-          (hardening_sysctl_file | dirname) ~ '/62-podman-userns.conf']
+          (hardening_sysctl_file | dirname) ~ '/61-gaming-userns.conf']
          + hardening_sysctl_kept }}
 
 # Only a file NO PACKAGE owns is retired: a distribution drop-in is not this

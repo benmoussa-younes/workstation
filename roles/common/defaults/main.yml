@@ -105,9 +105,6 @@ common_absent_packages:
   # next converge remove it again. The desktop may use hunspell or aspell; both
   # are legitimate. `emacsen-common` is also kept, for the same reason: `dict`
   # and `hunspell-fr` recommend it.
-  # A VM-only artefact: it cannot run without a qga channel, and bare metal
-  # never installs it.
-  - qemu-guest-agent
   # A workstation whose terminal is Ptyxis and whose editor is nano does not
   # need the legacy wireless tools or the minimal vi. `iw` is declared by the
   # network role; `nano` is the editor this product installs and declares in

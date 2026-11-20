@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.2] - 2026-11-20
+## [0.3.0] - 2026-11-20
+
+### Removed
+
+- The optional `virtualization` role (libvirt/virt-manager, rootless Podman) is
+  gone from the workstation edition: those stacks belong to the `virtualization`
+  and `container` products. A site that set `virtualization_enabled: true`
+  declares it there instead. The `virbr*` and `libvirt_nat` rules, the
+  `virt-manager` favorite, `qemu-guest-agent` and the `62-podman-userns.conf`
+  drop-in go with it.
 
 ### Changed
 
