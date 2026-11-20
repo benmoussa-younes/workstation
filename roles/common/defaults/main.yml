@@ -80,6 +80,9 @@ common_absent_packages:
   - gnome-shell-extension-caffeine
   - gnome-shell-extension-tiling-assistant
   - gnome-shell-extension-desktop-icons-ng
+  # The tool that installs/enables extensions has no job on a host that locks
+  # them all off; it goes with the four packages.
+  - gnome-shell-extension-prefs
   # The owner asked for htop to go; no top-family tool is declared.
   - htop
   # The Java runtime and the Commons Collections 3 gadget are pulled by
