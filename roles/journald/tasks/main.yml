@@ -45,12 +45,18 @@
 #
 # The declaration is the whole policy, so anything else is retired -- renamed,
 # never deleted, so it can be read back.
+- name: The journal drop-in directory is known
+  ansible.builtin.stat:
+    path: "{{ journald_dropin_dir }}"
+  register: journald_dropin_dir_state
+
 - name: The journal drop-ins already present are listed
   ansible.builtin.find:
     paths: "{{ journald_dropin_dir }}"
     patterns: "*.conf"
     file_type: file
   register: journald_existing
+  when: journald_dropin_dir_state.stat.isdir | default(false)
 
 # Only a file NO PACKAGE owns is retired: the distribution's own drop-ins are
 # not this role's to remove, and a package would restore them on its next
@@ -59,7 +65,7 @@
   ansible.builtin.command:
     cmd: dpkg-query -S {{ item }}
   loop: >-
-    {{ journald_existing.files | map(attribute='path')
+    {{ journald_existing.files | default([]) | map(attribute='path')
        | reject('search', '\.retired-')
        | reject('equalto', journald_dropin_dir ~ '/' ~ journald_dropin_name)
        | list }}
@@ -73,7 +79,7 @@
   ansible.builtin.command:
     cmd: >-
       mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
-  loop: "{{ journald_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop: "{{ journald_owner.results | default([]) | rejectattr('rc', 'equalto', 0) | list }}"
   loop_control:
     label: "{{ item.item | basename }}"
   changed_when: true

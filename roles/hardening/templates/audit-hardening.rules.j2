@@ -44,3 +44,9 @@
 
 ## Filesystem mounts.
 -a always,exit -F arch=b64 -S mount -k mounts
+
+## The boot chain: an initrd replaced between two boots is the evil-maid path.
+-w /boot -p wa -k boot
+
+## Make the rules immutable until the next boot.
+-e 2

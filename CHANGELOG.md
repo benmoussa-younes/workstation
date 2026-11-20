@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+### Removed
+
+- The optional `virtualization` role (libvirt/virt-manager, rootless Podman) is
+  gone from the workstation edition: those stacks belong to the `virtualization`
+  and `container` products. A site that set `virtualization_enabled: true`
+  declares it there instead. The `virbr*` and `libvirt_nat` rules, the
+  `virt-manager` favorite, `qemu-guest-agent` and the `62-podman-userns.conf`
+  drop-in go with it.
+
+### Changed
+
+- No GNOME Shell extension is shipped, enabled or installable: the four
+  `gnome-shell-extension-*` packages are removed by the `common` absent list,
+  `applications_extension_uuids` and `dconf_extensions` are empty, and
+  `disable-user-extensions` / `allow-extension-installation` stay locked.
+
+### Security
+
+- The sshd drop-in declares `RequiredRSASize 2048` and the algorithm lists:
+  MACs, ciphers, KEX, host-key and public-key algorithms no longer fall back to
+  Debian's defaults that still admit `hmac-sha1`, `umac-64` and 1024-bit RSA.
+- The `common` absent list now removes `htop`, the Java runtime and the Commons
+  Collections 3 gadget that `libreoffice`'s Recommends pulled in; the office
+  suite stays.
+
+### Fixed
+
+- `network`: the invalid `wifi.cloned-mac-address` key is removed (the
+  NetworkManager warning and the silent no-op go with it).
+- `dconf`: `disable-user-extensions=true`; the four declared extensions can no
+  longer be switched off by the account.
+
+## [0.2.1] - 2026-11-20
+
+### Security
+
+- The nftables drop-in now clears `ExecReload` as well as `ExecStart`. The
+  distribution's reload loaded only `/etc/nftables.conf`, whose `flush ruleset`
+  removed the product table; a `systemctl reload nftables` now fails instead of
+  leaving the workstation without its firewall.
+
+### Fixed
+
+- The Scripts release lookup runs in check mode. `uri` does not execute in a
+  dry run, so the registered result carried no `json` and the fact task failed
+  before the remaining roles were reached; the downloads stay guarded.
+- The dry run reaches the end: the OpenCode installer fetch and read-back are
+  guarded, the boot proof ends in check mode, a `find` on a drop-in directory
+  the role has not created yet is skipped from a remote `stat` instead of
+  warning, and the greeter background file is created when a dry run cannot get
+  it from the package.
+
 ## [0.2.0] - 2026-11-19
 
 ### Fixed

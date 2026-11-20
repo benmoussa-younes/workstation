@@ -43,20 +43,14 @@ table inet {{ security_firewall_table }} {
 {% for proto_rule in security_extra_protocols %}
         ip protocol {{ proto_rule.protocol }}{% if proto_rule.sources is defined and proto_rule.sources %} ip saddr { {{ proto_rule.sources | join(', ') }} }{% endif %} accept
 {% endfor %}
-{% if virtualization_enabled | default(false) %}
-        # libvirt guests: DHCP and DNS to the host's dnsmasq.
-        iifname "virbr*" udp dport 67 accept
-        iifname "virbr*" udp dport 53 accept
-        iifname "virbr*" tcp dport 53 accept
-{% endif %}
         # The counter the policy cannot give (see the comment above the chain).
         counter drop
     }
 
     # The FORWARD hook, which the host OWNS. Its policy is declared: `drop`
-    # unless the site says otherwise. A host that runs Docker must choose
-    # `accept`, because Docker publishes through its own NAT rules and a DROP
-    # policy here silently kills every published container port.
+    # unless the site says otherwise. A site that publishes a service through
+    # its own NAT rules must choose `accept`; a DROP policy here silently kills
+    # every forwarded port.
     #
     # As with `input`, the policy closes the chain; the terminal rule below is
     # there so the drop is counted.
@@ -72,27 +66,9 @@ table inet {{ security_firewall_table }} {
 {% for flow in security_forward_flows %}
         iif {{ flow.iif }} oif {{ flow.oif }}{% if flow.sources is defined and flow.sources %} ip saddr { {{ flow.sources | join(', ') }} }{% endif %} accept
 {% endfor %}
-{% if virtualization_enabled | default(false) %}
-        # libvirt guests: the bridge's own traffic and its return path.
-        iifname "virbr*" accept
-        oifname "virbr*" accept
-{% endif %}
 {% if security_forward_policy == 'drop' %}
         counter drop
 {% endif %}
     }
 }
 
-{% if virtualization_enabled | default(false) %}
-# libvirt's NAT is installed by libvirt when its network starts. This role owns
-# nftables and reloads it after `virtualization`; declare the masquerade here so
-# the reload does not strip the guests' route to the world.
-table ip libvirt_nat {}
-delete table ip libvirt_nat
-table ip libvirt_nat {
-    chain postrouting {
-        type nat hook postrouting priority srcnat; policy accept;
-        iifname "virbr*" masquerade
-    }
-}
-{% endif %}

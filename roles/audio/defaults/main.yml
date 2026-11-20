@@ -5,7 +5,7 @@
 # anyway, so the product has ONE place that names its audio server and a host
 # where a site removed a piece is repaired rather than left half-installed.
 # The GStreamer codecs are here because GNOME Videos/Showtime and the other
-# GStreamer applications need them for H.264/HEVC, MP3/AAC and the containers
+# GStreamer applications need them for H.264/HEVC, MP3/AAC and the media formats
 # Debian's `gnome-core` does not pull by default.
 audio_packages:
   - pipewire                      # the server

@@ -22,11 +22,9 @@ applications_packages:
   - inkscape                                  # vector graphics
   - gimp                                      # raster image editing
   - secrets                                    # GNOME Secrets, the password manager
-  - gnome-shell-extension-appindicator          # the tray: status icons for
-                                               # services that have no GNOME page
-  - gnome-shell-extension-caffeine              # an explicit "keep the screen on"
-  - gnome-shell-extension-tiling-assistant      # window tiling beyond the shell's
-  - gnome-shell-extension-desktop-icons-ng      # Desktop Icons NG (ding@rastersoft.com)
+  # The owner's rule (2026-11-20): no GNOME Shell extension is shipped, enabled
+  # or installable. The four packages the previous release declared are retired
+  # by the `common` absent list.
   - gnome-tweaks                                # the settings GNOME's panels do
                                                # not expose (fonts, startup apps)
   - gnome-music                                # a music player; VLC is the
@@ -107,11 +105,7 @@ applications_favorite_desktops:
 # (`ubuntu-appindicators@ubuntu.com` is Debian's UUID for the AppIndicator
 # extension, not `appindicatorsupport@...`). `dconf` enables and locks the same
 # four; an extension enabled there and absent here is a shell error at login.
-applications_extension_uuids:
-  - ubuntu-appindicators@ubuntu.com
-  - caffeine@patapon.info
-  - tiling-assistant@leleat-on-github
-  - ding@rastersoft.com
+applications_extension_uuids: []
 
 # The browser the product declares, and the one it refuses in its place.
 applications_browser: firefox

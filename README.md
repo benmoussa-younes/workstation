@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.2.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.2.0)
+[![Release](https://img.shields.io/badge/release-0.3.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.3.0)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -34,8 +34,6 @@ ships.
   release, the .NET 10 SDK, VSCodium and the rest through `developer_tools`;
   OpenCode when `coding_agents_opencode_enabled` is set, pinned by version and
   checksum.
-- **An optional local hypervisor**: libvirt/virt-manager and rootless Podman,
-  with the firewall rules their bridges need.
 - **A security baseline**: nftables input default-deny with SSH restricted to
   your sources, a hardened sshd and SSH client, a password policy, kernel and audit
   hardening — and Avahi retired rather than half-configured.
@@ -74,10 +72,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.2.0.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.3.0.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.2.0-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.3.0-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -155,14 +153,13 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `developer` | The declared developer tool groups through `developer_tools`, Debian packages, the .NET 10 SDK from Microsoft's pinned repository, the opt-in VSCodium from its pinned repository and the latest Scripts interpreter from its public GitHub release. No editor by default, no dotfile or service. |
 | `coding_agents` | Opt-in OpenCode for the human account (`coding_agents_opencode_enabled`, with `*_version` and `*_install_sha256`): the vendor's installer, pinned by version and SHA-256, the machine-wide `/etc/opencode/opencode.json` and the PATH drop-in. No model, provider or credential is declared. |
 | `gaming` | The opt-in gaming stack: Debian's Steam installer, controller rules, `gamemode`, `mangohud` and the 32-bit mesa/vulkan stack. Steam is proprietary, isolated and opt-in; inert unless `gaming_enabled` is true. |
-| `virtualization` | Optional libvirt/virt-manager and rootless Podman: the local socket, the default NAT network, the default storage pool, the rootless Podman socket, subordinate IDs and the user-namespace setting the rootless engine needs. The `security` role declares the `virbr*` DHCP/DNS/forward/NAT rules; this role requires it in the play. No VM or container is created. The `libvirt` group is root-equivalent. |
 | `fonts` | The declared families, Noto Extra/CJK and the fontconfig proof. |
 | `audio` | The PipeWire package set; the session proof is after login. The `alsa-utils` restore workaround is opt-in (`audio_fix_alsa_restore`, default false). |
 | `printing` | CUPS and the virtual PDF queue. |
 | `display` | GDM, `WaylandEnable` in `daemon.conf`, the greeter's logo key and the seat read back. |
 | `plymouth` | The Workstation boot splash, compiled into the initramfs and read back. |
 | `branding` | The wallpaper, GDM's logo and GRUB's image, from this product's own assets. |
-| `security` | The nftables input policy, sshd and the password policy; with `virtualization_enabled`, the libvirt bridge DHCP/DNS/forward/NAT rules. |
+| `security` | The nftables input policy, sshd and the password policy. |
 
 `roles/README.md` is the catalog with each role's status and key variables.
 
@@ -232,7 +229,16 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 ## Project status
 
-`0.2.0` is the current release. Debian amd64 is the only supported base; a newer
+## Migration from 0.2.x
+
+`0.3.0` removed the optional `virtualization` role (libvirt, virt-manager and
+rootless Podman). A site that set `virtualization_enabled: true` declares the
+stack with the `virtualization` and `container` products instead; the
+workstation keeps the firewall, SSH, account and desktop policy. The `virbr*`
+and `libvirt_nat` rules, the `virt-manager` favorite and `qemu-guest-agent` were
+removed with the role.
+
+`0.3.0` is the current release. Debian amd64 is the only supported base; a newer
 Debian release is added when the product declares it. The product is maintained
 by one author; there is no support contract, service level or warranty, express
 or implied (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md)).

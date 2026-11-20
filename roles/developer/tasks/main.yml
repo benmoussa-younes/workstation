@@ -351,6 +351,9 @@
          else 'tags/v' ~ developer_scripts_version }}
     return_content: true
   register: developer_scripts_release
+  # A GET is a read: it runs in check mode so the release facts are known. The
+  # downloads and the install stay guarded by `not ansible_check_mode`.
+  check_mode: false
   when: "'scripts' in developer_tools"
 
 - name: The Scripts release facts are known

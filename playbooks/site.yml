@@ -143,12 +143,6 @@
     - role: gaming
       tags: [gaming]
 
-    # The optional local virtualization stack: libvirt/virt-manager and
-    # rootless Podman. It creates no VM and no container; the Podman tasks keep
-    # their own tag.
-    - role: virtualization
-      tags: [virtualization]
-
     # The wallpaper, GDM's logo and the GRUB image, from this product's own
     # assets. It runs before `dconf` (which points at the wallpaper) and before
     # `display` (whose greeter key names the logo).
@@ -250,7 +244,8 @@
     - name: The run has a reboot to prove
       ansible.builtin.meta: end_play
       when: >-
-        not (workstation_reboot_after | default(false) | bool)
+        ansible_check_mode
+        or not (workstation_reboot_after | default(false) | bool)
         or (network_effective_apply | default('') not in ['boot', 'boot_pending'])
         or workstation_boot_address | default('') | length == 0
 

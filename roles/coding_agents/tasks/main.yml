@@ -131,7 +131,9 @@
     owner: root
     group: root
     mode: "0755"
-  when: coding_agents_opencode_enabled | bool
+  when:
+    - coding_agents_opencode_enabled | bool
+    - not ansible_check_mode
 
 - name: OpenCode is installed from the verified installer
   ansible.builtin.command:  # noqa: command-instead-of-module
@@ -178,7 +180,9 @@
       `{{ coding_agents_opencode_running.stderr | default('') | trim }}`.
       The installer needs `{{ coding_agents_opencode_install_url }}` and
       `registry.npmjs.org`.
-  when: coding_agents_opencode_enabled | bool
+  when:
+    - coding_agents_opencode_enabled | bool
+    - not ansible_check_mode
 
 - name: The installed OpenCode is the pinned version
   ansible.builtin.assert:
@@ -189,4 +193,6 @@
       `{{ coding_agents_opencode_running.stdout | default('') | trim }}`, not the
       pinned `{{ coding_agents_opencode_version }}`. Bump the pin and set
       `coding_agents_opencode_reinstall: true` for one run.
-  when: coding_agents_opencode_enabled | bool
+  when:
+    - coding_agents_opencode_enabled | bool
+    - not ansible_check_mode

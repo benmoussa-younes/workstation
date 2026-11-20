@@ -13,9 +13,9 @@
 # in its declaration, and naming this desktop `server` would brand it as the
 # wrong product on the login banner, in `/etc/issue` and in os-release.
 #
-# DIVERGENCE FROM the Server collection: the source also names `server` and
-# `container`. Neither is reused: the table holds this product's identity and
-# the schema refuses anything else.
+# DIVERGENCE FROM the Server collection: the source names other products.
+# None is reused: the table holds this product's identity and the schema
+# refuses anything else.
 identity_product: workstation-gnome
 identity_names:
   workstation-gnome: Workstation Edition
@@ -24,7 +24,7 @@ identity_name: "{{ identity_names[identity_product] }}"
 # The edition's own version. It moves when this product is released, never when
 # the distribution is upgraded; it equals `VERSION`, and the release gate
 # asserts the changelog entry that carries it.
-identity_version: "0.2.0"
+identity_version: "0.3.0"
 
 # The host name this product declares. Empty leaves `/etc/hostname` and the
 # running name untouched: a site that names its machines at install time does

@@ -283,13 +283,21 @@
 # A drop-in this role does not declare sorts after its own and wins the keys:
 # measured on a converted machine (2026-10-20), where a hand-written
 # `90-workstation.conf` decided `NTP=` while the role believed `50-` did.
+- name: The time client's drop-in directory is known
+  ansible.builtin.stat:
+    path: "{{ time_timesyncd_conf_dir }}"
+  register: time_timesyncd_conf_dir_state
+  when: not time_serve | bool
+
 - name: The time client's drop-ins already present are listed
   ansible.builtin.find:
     paths: "{{ time_timesyncd_conf_dir }}"
     patterns: "*.conf"
     file_type: file
   register: time_existing
-  when: not time_serve | bool
+  when:
+    - not time_serve | bool
+    - time_timesyncd_conf_dir_state.stat.isdir | default(false)
 
 - name: The time client's drop-ins are attached to a package, or not
   ansible.builtin.command:

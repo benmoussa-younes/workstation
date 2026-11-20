@@ -16,5 +16,6 @@ plugins=keyfile
 # not a random one per scan. `permanent` also keeps a reconnect on the same
 # lease when the access point binds sessions to a MAC.
 wifi.scan-rand-mac-address=no
-wifi.cloned-mac-address=permanent
+# MAC randomization is left at NetworkManager's default; `wifi.cloned-mac-address`
+# is not a valid key in [device] and was ignored with a warning.
 wifi.backend=wpa_supplicant

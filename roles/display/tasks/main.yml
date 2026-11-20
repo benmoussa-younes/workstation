@@ -133,23 +133,37 @@
     owner: root
     group: root
     mode: "0644"
+    create: true
   notify: Restart GDM
 
-- name: The autologin is declared
-  ansible.builtin.template:
-    src: 90-workstation-autologin.conf.j2
-    dest: "{{ display_manager_config_dir }}/90-workstation-autologin.conf"
-    owner: root
-    group: root
-    mode: "0644"
+- name: The autologin is declared in the file GDM reads
+  ansible.builtin.lineinfile:
+    path: "{{ display_manager_config }}"
+    regexp: "^#?\\s*{{ item.key }}"
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: AutomaticLoginEnable, value: "true" }
+    - { key: AutomaticLogin, value: "{{ display_manager_autologin_user }}" }
   when: display_manager_autologin | bool
   notify: Restart GDM
 
-- name: An autologin the site no longer wants is withdrawn
+- name: An autologin the site no longer wants is withdrawn from daemon.conf
+  ansible.builtin.lineinfile:
+    path: "{{ display_manager_config }}"
+    regexp: "^#?\\s*{{ item.key }}"
+    line: "{{ item.key }}="
+  loop:
+    - { key: AutomaticLoginEnable }
+    - { key: AutomaticLogin }
+  when: not display_manager_autologin | bool
+  notify: Restart GDM
+
+# The old drop-in was inert: GDM 48 reads `/etc/gdm3/daemon.conf` only. It is
+# removed from any host the previous release wrote it to.
+- name: The inert autologin drop-in is absent
   ansible.builtin.file:
     path: "{{ display_manager_config_dir }}/90-workstation-autologin.conf"
     state: absent
-  when: not display_manager_autologin | bool
   notify: Restart GDM
 
 # The alias is the package's: `gdm.service` carries `[Install]

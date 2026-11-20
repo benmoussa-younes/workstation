@@ -47,16 +47,13 @@
   # owning its own namespace. The opt-in `gaming` role owns
   # `61-gaming-userns.conf`: without it here, this role renamed the file the
   # gaming role had just written, and every converge reported the pair as a
-  # change (measured on the desktop site, 2026-11-11). The optional
-  # `virtualization` role owns `62-podman-userns.conf` for the same reason:
-  # rootless Podman needs the setting this role disables.
+  # change (measured on the desktop site, 2026-11-11).
   ansible.builtin.set_fact:
     hardening_sysctl_declared: >-
       {{ [hardening_sysctl_file,
           (hardening_sysctl_file | dirname) ~ '/50-performance.conf',
           (hardening_sysctl_file | dirname) ~ '/51-performance-network.conf',
-          (hardening_sysctl_file | dirname) ~ '/61-gaming-userns.conf',
-          (hardening_sysctl_file | dirname) ~ '/62-podman-userns.conf']
+          (hardening_sysctl_file | dirname) ~ '/61-gaming-userns.conf']
          + hardening_sysctl_kept }}
 
 # Only a file NO PACKAGE owns is retired: a distribution drop-in is not this
@@ -131,11 +128,17 @@
 # policy carried each one twice, and the load failed with "Rule exists".
 # The declaration is the whole policy, so anything else is retired -- renamed,
 # not deleted, so it can be read back.
+- name: The audit rules directory is known
+  ansible.builtin.stat:
+    path: "{{ hardening_audit_rules_file | dirname }}"
+  register: hardening_audit_rules_state
+
 - name: The undeclared audit rule files are found
   ansible.builtin.find:
     paths: "{{ hardening_audit_rules_file | dirname }}"
     patterns: "*.rules"
   register: hardening_audit_rule_files
+  when: hardening_audit_rules_state.stat.isdir | default(false)
 
 # `audit.rules` is the DISTRIBUTION's file and it is NOT retired: it carries the
 # control directives (`-D`, `-b`, `--backlog_wait_time`, `-f`) that `augenrules`
@@ -150,7 +153,7 @@
   ansible.builtin.command:
     cmd: mv {{ item }} {{ item }}.retired-{{ ansible_date_time.date }}
   loop: >-
-    {{ hardening_audit_rule_files.files | map(attribute='path')
+    {{ hardening_audit_rule_files.files | default([]) | map(attribute='path')
        | reject('search', '\.retired-|\.disabled-')
        | reject('in', [hardening_audit_rules_file,
                        (hardening_audit_rules_file | dirname) ~ '/audit.rules'])

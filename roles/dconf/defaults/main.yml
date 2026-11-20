@@ -107,18 +107,12 @@ dconf_favorite_apps:
 # Applications the reference workstation pinned and this product's start set
 # does not pin. VSCodium is installed now, under
 # `com.visualstudio.CodeOSS.desktop`, but it is not a product favorite; a user
-# may pin it. virt-manager is not installed, so a dash that starts with it is a
-# lie. GIMP is a product default and is no longer in this list.
-dconf_favorite_apps_absent:
-  - virt-manager.desktop
+# may pin it. GIMP is a product default and is no longer in this list.
+dconf_favorite_apps_absent: []
 
 # The curated extension set. Installation of anything else is refused, and the
 # four are locked so a session cannot add a fifth.
-dconf_extensions:
-  - ubuntu-appindicators@ubuntu.com
-  - caffeine@patapon.info
-  - tiling-assistant@leleat-on-github
-  - ding@rastersoft.com
+dconf_extensions: []
 dconf_allow_extension_installation: false
 
 # The keyfiles this role writes, in the order dconf compiles them. The name is

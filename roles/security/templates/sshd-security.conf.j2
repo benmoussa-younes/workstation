@@ -33,6 +33,14 @@ AllowStreamLocalForwarding no
 # Slow guessing down and serve the banner the identity role writes.
 MaxAuthTries 3
 LoginGraceTime 60
+# The algorithm lists are declared, not inherited: Debian's defaults still
+# admit hmac-sha1 and umac-64, and a 1024-bit RSA client key.
+RequiredRSASize 2048
+MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com
+Ciphers chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com
+KexAlgorithms mlkem768x25519-sha256,curve25519-sha256,curve25519-sha256@libssh.org,sntrup761x25519-sha512
+HostKeyAlgorithms ssh-ed25519,ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256
+PubkeyAcceptedAlgorithms ssh-ed25519,ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256
 Banner /etc/issue.net
 {% if security_sshd_allow_groups_effective %}
 # Only declared groups may log in. An empty list would mean anyone with a key.
