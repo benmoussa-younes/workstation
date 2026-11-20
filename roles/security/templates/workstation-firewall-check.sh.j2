@@ -1,0 +1,13 @@
+#!/bin/sh
+# One job: after the boot, prove the product's nftables table is loaded and
+# still drops. A failed second ExecStart would leave the host unfiltered.
+set -eu
+if ! /usr/sbin/nft list table inet {{ security_firewall_table }} >/dev/null 2>&1; then
+  echo "workstation: table inet {{ security_firewall_table }} is missing" >&2
+  exit 1
+fi
+if /usr/sbin/nft list chain inet {{ security_firewall_table }} input 2>/dev/null | grep -q 'policy accept'; then
+  echo "workstation: input chain policy is accept" >&2
+  exit 1
+fi
+exit 0

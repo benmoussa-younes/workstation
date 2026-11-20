@@ -127,6 +127,17 @@ common_directories:
 common_unattended_origins:
   - "origin=Debian,codename=${distro_codename}-security,label=Debian-Security"
   - "origin=Debian,codename=${distro_codename},label=Debian-Security"
+  # Point releases carry fixes that do not reach -security; the owner accepts
+  # them unattended.
+  - "origin=Debian,codename=${distro_codename}-updates,label=Debian"
+  # Firefox is the only browser and lives outside Debian's archive.
+  - "origin=Mozilla,codename=mozilla,label=Mozilla"
+
+# A failed security update must not be silent. The product ships no MTA; the
+# unattended-upgrades unit's journal is the recipient, and systemd's OnFailure
+# hook (below) makes the failure visible in `systemctl --failed`.
+common_unattended_mail: "root"
+common_unattended_mail_report: "on-change"
 
 # Never reboot on its own: these servers hold services, and an unattended reboot
 # is an outage. The kernel is updated, the reboot is the operator's.

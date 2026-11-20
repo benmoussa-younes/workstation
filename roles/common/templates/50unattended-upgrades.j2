@@ -18,8 +18,8 @@ Unattended-Upgrade::Automatic-Reboot "{{ 'true' if common_unattended_autoreboot 
 // Log to the journal. The product ships no mail path: it neither runs an MTA nor
 // relays to one, so a report addressed to root would have nowhere to go.
 Unattended-Upgrade::SyslogEnable "true";
-Unattended-Upgrade::Mail "";
-Unattended-Upgrade::MailReport "off";
+Unattended-Upgrade::Mail "{{ common_unattended_mail }}";
+Unattended-Upgrade::MailReport "{{ common_unattended_mail_report }}";
 
 // Removals are a declared decision (the `common` role's absent list), never a
 // side effect of an upgrade.

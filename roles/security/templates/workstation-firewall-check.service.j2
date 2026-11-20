@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify the workstation nftables table survived the boot
+After=nftables.service
+Wants=nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/workstation-firewall-check
+
+[Install]
+WantedBy=multi-user.target
