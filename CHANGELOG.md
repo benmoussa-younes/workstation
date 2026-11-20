@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.2] - 2026-11-20
 
+### Changed
+
+- No GNOME Shell extension is shipped, enabled or installable: the four
+  `gnome-shell-extension-*` packages are removed by the `common` absent list,
+  `applications_extension_uuids` and `dconf_extensions` are empty, and
+  `disable-user-extensions` / `allow-extension-installation` stay locked.
+
 ### Security
 
 - The sshd drop-in declares `RequiredRSASize 2048` and the algorithm lists:

@@ -114,11 +114,7 @@ dconf_favorite_apps_absent:
 
 # The curated extension set. Installation of anything else is refused, and the
 # four are locked so a session cannot add a fifth.
-dconf_extensions:
-  - ubuntu-appindicators@ubuntu.com
-  - caffeine@patapon.info
-  - tiling-assistant@leleat-on-github
-  - ding@rastersoft.com
+dconf_extensions: []
 dconf_allow_extension_installation: false
 
 # The keyfiles this role writes, in the order dconf compiles them. The name is
