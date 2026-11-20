@@ -95,7 +95,7 @@
     fail_msg: >-
       {{ inventory_hostname }}: a keyfile this product does not declare is in
       {{ dconf_db_dir }}:
-      {{ dconf_existing_keyfiles.files | map(attribute='path') | map('basename')
+      {{ dconf_existing_keyfiles.files | default([]) | map(attribute='path') | map('basename')
          | difference(dconf_keyfiles | map(attribute='dest') | list) }}.
       dconf compiles EVERY file in that directory, in name order, so a leftover
       decides keys this role believes it owns. Move it out of the directory
