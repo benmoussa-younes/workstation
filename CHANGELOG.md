@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Scripts release lookup runs in check mode. `uri` does not execute in a
   dry run, so the registered result carried no `json` and the fact task failed
   before the remaining roles were reached; the downloads stay guarded.
+- The dry run reaches the end: the OpenCode installer fetch and read-back are
+  guarded, the boot proof ends in check mode, and a `find` on a drop-in
+  directory the role has not created yet no longer warns.
 
 ## [0.2.0] - 2026-11-19
 

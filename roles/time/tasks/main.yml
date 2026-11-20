@@ -289,7 +289,7 @@
     patterns: "*.conf"
     file_type: file
   register: time_existing
-  when: not time_serve | bool
+  when: not time_serve | bool and time_timesyncd_conf_dir is directory
 
 - name: The time client's drop-ins are attached to a package, or not
   ansible.builtin.command:

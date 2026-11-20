@@ -179,12 +179,13 @@
     patterns: "*.conf"
     file_type: file
   register: resolver_existing
+  when: resolver_conf_dir is directory
 
 - name: The resolver drop-ins are attached to a package, or not
   ansible.builtin.command:
     cmd: dpkg-query -S {{ item }}
   loop: >-
-    {{ resolver_existing.files | map(attribute='path')
+    {{ resolver_existing.files | default([]) | map(attribute='path')
        | reject('search', '\.retired-')
        | reject('equalto', resolver_dropin)
        | list }}
@@ -198,7 +199,7 @@
   ansible.builtin.command:
     cmd: >-
       mv {{ item.item }} {{ item.item }}.retired-{{ ansible_date_time.date }}
-  loop: "{{ resolver_owner.results | rejectattr('rc', 'equalto', 0) | list }}"
+  loop: "{{ resolver_owner.results | default([]) | rejectattr('rc', 'equalto', 0) | list }}"
   loop_control:
     label: "{{ item.item | basename }}"
   changed_when: true

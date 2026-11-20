@@ -250,7 +250,8 @@
     - name: The run has a reboot to prove
       ansible.builtin.meta: end_play
       when: >-
-        not (workstation_reboot_after | default(false) | bool)
+        ansible_check_mode
+        or not (workstation_reboot_after | default(false) | bool)
         or (network_effective_apply | default('') not in ['boot', 'boot_pending'])
         or workstation_boot_address | default('') | length == 0
 

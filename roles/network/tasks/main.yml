@@ -716,10 +716,11 @@
 # prints a value.
 - name: The files that may carry a Wi-Fi key are listed
   ansible.builtin.find:
-    paths: "{{ network_wpa_psk_search_paths }}"
+    paths: "{{ network_wpa_psk_search_paths | select('directory') | list }}"
     patterns: "{{ network_wpa_psk_search_patterns }}"
     file_type: file
   register: network_psk_files
+  when: (network_wpa_psk_search_paths | select('directory') | list) | length > 0
 
 - name: The Wi-Fi passphrase is retired from every file that carried it
   ansible.builtin.command:  # noqa: command-instead-of-module
