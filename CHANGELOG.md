@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed the product table; a `systemctl reload nftables` now fails instead of
   leaving the workstation without its firewall.
 
+### Fixed
+
+- The Scripts release lookup runs in check mode. `uri` does not execute in a
+  dry run, so the registered result carried no `json` and the fact task failed
+  before the remaining roles were reached; the downloads stay guarded.
+
 ## [0.2.0] - 2026-11-19
 
 ### Fixed
