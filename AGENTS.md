@@ -43,8 +43,8 @@ files.
 
 - One branch per task, `work/<slug>`; one concern per commit; English,
   imperative subject; the body says why.
-- Commits and tags are GPG-signed. The maintainer merges a green `check`
-  locally; publishing (push, tag, release) is the owner's act.
+- Commits and tags are GPG-signed. A change lands on `main` only when
+  `tools/scripts/binaries/gate.scs` prints `VERDICT: PASS`; a release is the maintainer's decision.
 
 ## Security
 
