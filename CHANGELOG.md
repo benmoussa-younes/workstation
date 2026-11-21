@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `gnome-tweaks` and `gnome-shell-extension-prefs` leave the product: Tweaks'
+  Shell panel is the extension switcher the locked policy refuses, and its other
+  knobs are declared by `dconf`. Both join the `common` absent list, and apt is
+  told to refuse them: a `Pin-Priority: -1` preference makes `apt-get install`
+  answer "no installable version" (rc 100) instead of reinstalling them, while a
+  `dpkg -i` stays the root operator's escape hatch. The `gnome-extensions`
+  command is shipped by `gnome-shell` itself and cannot be removed without the
+  shell; `disable-user-extensions` and `allow-extension-installation` stay
+  locked, so it has nothing to switch on.
+- Tweaks and the Extensions app leave the application grid's System folder.
+
+  The `applications` list and the apt refusal must land in the same release: a
+  host that runs a collection still declaring `gnome-tweaks` would ask apt to
+  install a package the refusal forbids, and the `applications` role would fail
+  there. A site that keeps Tweaks sets `common_refused_packages: []` and removes
+  it from `common_absent_packages`; the refusal file is then removed instead of
+  being left behind.
+
+### Changed
+
+- The extension set is empty and no longer described as four. GNOME Shell 48
+  (Debian 13, `gnome-shell 48.7`) has no StatusNotifier/AppIndicator host of its
+  own. Measured on the laptop, 2026-11-21: `gdbus … IsStatusNotifierHostRegistered`
+  answers `ServiceUnknown`, `dpkg -L gnome-shell` carries no such code, no D-Bus
+  service file provides the watcher name, and the only provider on the host is
+  the disabled `ubuntu-appindicators@ubuntu.com` extension. A tray is therefore a
+  site's explicit decision, never a default, and an application must work
+  without one: closing it quits.
+
+### Fixed
+
+- `common` now names an installed extension package at the next converge, and
+  proves the apt refusal twice: the `-1` priority is read from apt's version
+  table and `apt-get -s install` must answer "no installable version". Drift is
+  reported instead of being discovered in a session.
+- `dconf`: the keyfile header claimed "four extensions" and "four keys" while the
+  declared set has been empty since 0.3.0 and the lock file carries three keys.
+
 ## [0.3.0] - 2026-11-20
 
 ### Removed

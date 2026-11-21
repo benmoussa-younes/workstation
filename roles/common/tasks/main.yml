@@ -51,6 +51,119 @@
     # leaves every other removal to the operator.
     autoremove: false
 
+# `state=absent` removes a package; it does not stop the next `apt install`, and
+# an extension switch is exactly what someone installs to get a tray icon back.
+# The refusal is therefore declared where apt reads it.
+- name: The refused packages are declared to apt
+  ansible.builtin.template:
+    src: 90-workstation-refused.pref.j2
+    dest: "{{ common_refused_pin_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: common_refused_packages | length > 0
+
+# An empty list is the site's opt-out: no refusal file may outlive the decision,
+# or apt would keep refusing a package the site just declared it wants.
+- name: No refusal file outlives an empty list
+  ansible.builtin.file:
+    path: "{{ common_refused_pin_file }}"
+    state: absent
+  when: common_refused_packages | length == 0
+
+# Read back twice, because neither answer is enough alone. `apt-get -s` answers
+# rc 100 both for "no installable version" and for a package apt cannot locate at
+# all; `apt-cache policy` shows the pin itself, every version line ending with its
+# priority. A `-1` there is the refusal in force.
+- name: The apt policy of the refused packages is read
+  ansible.builtin.command:
+    cmd: apt-cache policy {{ item }}
+  loop: "{{ common_refused_packages }}"
+  loop_control:
+    label: "{{ item }}"
+  register: common_refused_policy
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Every refused package is pinned below installable
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search('(?m)^ +[^ ]+ -1$')
+    fail_msg: >-
+      {{ inventory_hostname }}: `apt-cache policy {{ item.item }}` shows no
+      version with priority -1, so the refusal in {{ common_refused_pin_file }}
+      is not in force, or apt knows no version for the package at all. The file
+      needs its `.pref` suffix, a blank line between records and
+      `Pin-Priority: -1`.
+  loop: "{{ common_refused_policy.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode
+
+- name: The refused packages are asked of apt
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: apt-get -s install {{ item }}
+  loop: "{{ common_refused_packages }}"
+  loop_control:
+    label: "{{ item }}"
+  register: common_refused_simulation
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+# The pin above is the mechanism; this is what a person sees when they type
+# `apt install`.
+- name: The refused packages have no installable version
+  ansible.builtin.assert:
+    that:
+      - item.rc == 100
+    fail_msg: >-
+      {{ inventory_hostname }}: `apt-get -s install {{ item.item }}` answers rc
+      {{ item.rc }} instead of 100 (no installable version). Read
+      {{ common_refused_pin_file }}: without its `Pin-Priority: -1` entry, apt
+      resolves the package again.
+  loop: "{{ common_refused_simulation.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode
+
+# The extension set is empty and locked by `dconf`; an extension package found
+# here is drift, not a setting. Named so a converge reports it instead of a
+# session discovering it. A site that declares an extension removes it from
+# `common_absent_packages`, which removes it from this check too.
+#
+# `dpkg-query -W` also answers for packages dpkg knows but has never installed
+# (state `un`), so the status column is read: only `ii` is installed.
+- name: The installed extension packages are read
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${db:Status-Abbrev}${Package}\n' 'gnome-shell-extension-*'
+  register: common_extension_packages
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The extension packages this product removes are listed
+  ansible.builtin.set_fact:
+    common_extension_packages_installed: >-
+      {{ common_extension_packages.stdout_lines | default([])
+         | select('match', '^ii ') | map('regex_replace', '^ii +', '') | list
+         | intersect(common_absent_packages) }}
+  when: not ansible_check_mode
+
+- name: No extension package this product removes is installed
+  ansible.builtin.assert:
+    that:
+      - common_extension_packages.rc | int in [0, 1]
+      - common_extension_packages_installed | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} has {{ common_extension_packages_installed }}
+      installed. This product ships no GNOME Shell extension: GNOME Shell 48 has
+      no tray host of its own, and the session cannot enable or install one
+      (`disable-user-extensions` and `allow-extension-installation` are locked).
+      Remove it, or make the site's decision explicit in `dconf_extensions`,
+      `applications_extension_uuids` and `common_absent_packages`.
+  when: not ansible_check_mode
+
 # The server masks the Bluetooth daemon with a symlink to /dev/null. A desktop
 # needs the daemon: GNOME Settings has no Bluetooth page without `bluez`, and a
 # mask that survives the conversion cannot be lifted by installing the package.

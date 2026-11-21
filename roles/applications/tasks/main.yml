@@ -420,6 +420,6 @@
       {{ applications_extension_dirs.results | rejectattr('stat.isdir')
          | map(attribute='item') | list }} under
       {{ applications_extension_dir }}. The `gnome-shell-extension-*` packages
-      provide them; the `dconf` role enables the same three UUIDs. The
-      session-level `gnome-extensions list` is checked after login.
+      provide them; the `dconf` role declares and locks the same UUIDs (empty by
+      default). The session-level `gnome-extensions list` is checked after login.
   when: not ansible_check_mode

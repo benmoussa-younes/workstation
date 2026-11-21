@@ -43,6 +43,21 @@ argument_specs:
         type: str
         required: false
         description: The apt.conf.d file that declares the allowed origins.
+      common_refused_packages:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The packages apt must refuse to install, pinned at
+          `Pin-Priority: -1` (gnome-tweaks, gnome-shell-extension-prefs). The
+          four extension packages stay unpinned on purpose: a site that opts
+          into one removes it from `common_absent_packages`.
+      common_refused_pin_file:
+        type: str
+        required: false
+        description: >-
+          The apt preferences file carrying the refusal. It must end in `.pref`
+          or APT ignores it.
       common_geoclue_config:
         type: str
         required: false

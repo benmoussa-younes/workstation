@@ -25,8 +25,6 @@ applications_packages:
   # The owner's rule (2026-11-20): no GNOME Shell extension is shipped, enabled
   # or installable. The four packages the previous release declared are retired
   # by the `common` absent list.
-  - gnome-tweaks                                # the settings GNOME's panels do
-                                               # not expose (fonts, startup apps)
   - gnome-music                                # a music player; VLC is the
                                                # declared default for media
   - vlc                                        # the media player, default for
@@ -103,8 +101,9 @@ applications_favorite_desktops:
 
 # The extension UUIDs, as the `gnome-shell-extension-*` packages install them
 # (`ubuntu-appindicators@ubuntu.com` is Debian's UUID for the AppIndicator
-# extension, not `appindicatorsupport@...`). `dconf` enables and locks the same
-# four; an extension enabled there and absent here is a shell error at login.
+# extension, not `appindicatorsupport@...`). Empty: `dconf` declares and locks
+# the same list, and an extension enabled there and absent here is a shell error
+# at login.
 applications_extension_uuids: []
 
 # The browser the product declares, and the one it refuses in its place.

@@ -74,15 +74,19 @@ common_absent_packages:
   # its own library and no product use. `shotwell-common` goes with it.
   - shotwell
   - shotwell-common
-  # The owner asked for the four GNOME Shell extensions to be removed; the
-  # `applications` and `dconf` roles declare no extension any more.
+  # No GNOME Shell extension is shipped or enabled. GNOME Shell 48 has no
+  # StatusNotifier/AppIndicator host of its own (measured on the laptop,
+  # 2026-11-21: the watcher name is not activatable and `gnome-shell` carries no
+  # such code), so a tray is a site's explicit decision, never this product's
+  # default. An application must work without one: closing it quits.
   - gnome-shell-extension-appindicator
   - gnome-shell-extension-caffeine
   - gnome-shell-extension-tiling-assistant
   - gnome-shell-extension-desktop-icons-ng
-  # The tool that installs/enables extensions has no job on a host that locks
-  # them all off; it goes with the four packages.
+  # The extension switcher, and Tweaks' Shell panel which offers the same switch,
+  # have nothing to switch here. Both are also pinned uninstallable below.
   - gnome-shell-extension-prefs
+  - gnome-tweaks
   # The owner asked for htop to go; no top-family tool is declared.
   - htop
   # The Java runtime and the Commons Collections 3 gadget are pulled by
@@ -153,6 +157,21 @@ common_unattended_autoreboot: false
 # `50unattended-upgrades` says what it may install.
 common_auto_upgrades_file: /etc/apt/apt.conf.d/20auto-upgrades
 common_unattended_upgrades_file: /etc/apt/apt.conf.d/50unattended-upgrades
+
+# Packages apt must REFUSE, not merely remove: `state=absent` is undone by the
+# next `apt install`, and these two are what a session reaches for when it wants
+# a tray icon or an extension switch. A `Pin-Priority: -1` makes apt answer "no
+# installable version"; `dpkg -i` stays the root operator's escape hatch, which
+# is the point -- a refusal, not a jail.
+#
+# The four extension packages are deliberately NOT pinned: a site that opts into
+# one removes it from `common_absent_packages`, and the product keeps that
+# decision visible instead of impossible.
+common_refused_packages:
+  - gnome-tweaks
+  - gnome-shell-extension-prefs
+# APT only reads `preferences.d` files whose name ends in `.pref`.
+common_refused_pin_file: /etc/apt/preferences.d/90-workstation-refused.pref
 
 # The location service's configuration. Its network-NMEA source fetches a GPS
 # from the local network over mDNS; Avahi is retired below, so that source has

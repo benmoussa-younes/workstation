@@ -110,8 +110,12 @@ dconf_favorite_apps:
 # may pin it. GIMP is a product default and is no longer in this list.
 dconf_favorite_apps_absent: []
 
-# The curated extension set. Installation of anything else is refused, and the
-# four are locked so a session cannot add a fifth.
+# The curated extension set, empty: GNOME Shell 48 has no tray host of its own
+# (measured on the laptop, 2026-11-21), the product ships no extension, and
+# installation stays off. The three keys are locked so a session cannot add one;
+# a site that wants an extension declares it here and in
+# `applications_extension_uuids`, and removes its package from
+# `common_absent_packages`.
 dconf_extensions: []
 dconf_allow_extension_installation: false
 
@@ -233,12 +237,10 @@ dconf_app_folders:
     name: Système
     apps:
       - org.gnome.Settings.desktop
-      - org.gnome.tweaks.desktop
       - org.gnome.Logs.desktop
       - org.gnome.SystemMonitor.desktop
       - org.gnome.DiskUtility.desktop
       - org.gnome.Software.desktop
-      - org.gnome.Extensions.desktop
       - org.gnome.Tecla.desktop
       - org.gnome.World.Secrets.desktop
   - id: Media

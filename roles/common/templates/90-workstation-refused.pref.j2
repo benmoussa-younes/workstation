@@ -1,0 +1,16 @@
+# Managed by Ansible; do not edit.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Packages apt refuses to install. APT reads this directory only for files
+# ending in `.pref`, and `#` is the comment syntax here (the apt.conf.d files
+# above use `//`; this file is a preferences file, not an apt.conf one).
+#
+# `Pin-Priority: -1` puts a version below "never", so apt answers "no installable
+# version" instead of resolving the package. A `dpkg -i` still works for the root
+# operator: this is a refusal, not a jail.
+{% for package in common_refused_packages %}
+Package: {{ package }}
+Pin: version *
+Pin-Priority: -1
+
+{% endfor %}
