@@ -44,8 +44,9 @@ argument_specs:
         elements: str
         required: false
         description: >-
-          The GNOME Shell extension UUIDs that must be installed. `dconf` enables
-          and locks the same four.
+          The GNOME Shell extension UUIDs that must be installed. `dconf`
+          declares and locks the same list; it is empty by default, so the task
+          below is inert unless a site declares an extension.
       applications_browser:
         type: str
         required: false

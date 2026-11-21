@@ -30,6 +30,10 @@ ships.
 - **A declared application set**: Firefox from Mozilla, LibreOffice, Evolution,
   GIMP, Inkscape, Secrets, Ptyxis and VLC as the default media handler — plus
   six folders in the application grid.
+- **No tray, no extension, by decision**: GNOME Shell 48 has no
+  StatusNotifier/AppIndicator host of its own, so the product ships no extension,
+  no extension switcher and no Tweaks, and apt refuses to install the two
+  switchers again. An application must work without a tray: closing it quits.
 - **Developer tools on demand**: the `scripts` interpreter from its public
   release, the .NET 10 SDK, VSCodium and the rest through `developer_tools`;
   OpenCode when `coding_agents_opencode_enabled` is set, pinned by version and
@@ -137,7 +141,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 
 | Role | Concern |
 |---|---|
-| `common` | The Debian package baseline, periodic security upgrades, the shared directories and the server's Bluetooth mask withdrawn. Shotwell is retired (Loupe is the image viewer) and Avahi is retired too: the unit, its alias and its D-Bus activation file are all closed. |
+| `common` | The Debian package baseline, periodic security upgrades, the shared directories and the server's Bluetooth mask withdrawn. Shotwell is retired (Loupe is the image viewer) and Avahi is retired too: the unit, its alias and its D-Bus activation file are all closed. No GNOME Shell extension, extension switcher or Tweaks: the packages are purged and apt is pinned to refuse `gnome-tweaks` and `gnome-shell-extension-prefs`. |
 | `identity` | The product name on os-release, issue, issue.net and the login banner. |
 | `journald` | The journal's size and retention. |
 | `keyboard` | The console keyboard and GRUB's copy. |
@@ -148,8 +152,8 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `time` | Exactly one time daemon and the declared zone. |
 | `gnome` | Debian's `gnome-core` and desktop task, and a Wayland session. |
 | `desktop` | The account's desktop groups, locale and Bluetooth daemon. |
-| `dconf` | The profile-wide GNOME policy: appearance, wallpaper, screen lock, privacy, extensions, favorites and the six application-grid folders. |
-| `applications` | The declared Debian applications (including VLC, default for video/audio MIME), GNOME Shell extensions, GNOME Secrets and Mozilla Firefox. |
+| `dconf` | The profile-wide GNOME policy: appearance, wallpaper, screen lock, privacy, an empty and locked extension set, favorites and the six application-grid folders. |
+| `applications` | The declared Debian applications (including VLC, default for video/audio MIME), GNOME Secrets and Mozilla Firefox. |
 | `developer` | The declared developer tool groups through `developer_tools`, Debian packages, the .NET 10 SDK from Microsoft's pinned repository, the opt-in VSCodium from its pinned repository and the latest Scripts interpreter from its public GitHub release. No editor by default, no dotfile or service. |
 | `coding_agents` | Opt-in OpenCode for the human account (`coding_agents_opencode_enabled`, with `*_version` and `*_install_sha256`): the vendor's installer, pinned by version and SHA-256, the machine-wide `/etc/opencode/opencode.json` and the PATH drop-in. No model, provider or credential is declared. |
 | `gaming` | The opt-in gaming stack: Debian's Steam installer, controller rules, `gamemode`, `mangohud` and the 32-bit mesa/vulkan stack. Steam is proprietary, isolated and opt-in; inert unless `gaming_enabled` is true. |
