@@ -15,10 +15,11 @@ passes the gate.
 ## External contributions
 
 External contributions are **not accepted at this time**. Workstation Edition is
-maintained by the owner; unsolicited pull requests, patches and issues may be
-closed without review. This policy does not limit the rights the licences grant
-you: the source is free software, and you may fork it and modify it under the
-licence terms.
+maintained by the owner; unsolicited pull requests and patches may be closed
+without review. Issues and discussions are disabled on the repository, so there
+is no public defect tracker. This policy does not limit the rights the licences
+grant you: the source is free software, and you may fork it and modify it under
+the licence terms.
 
 ## Support and warranty
 

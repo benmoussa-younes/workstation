@@ -1,17 +1,17 @@
 # Role catalog
 
 Every behaviour of this product is one role, listed here once. A role carries
-no README of its own. The catalog is decided before the first role is written;
-a new role is added to this table in the same change that creates it.
+no README of its own. The catalog is the single list of roles; a new role is
+added to this table in the same change that creates it.
 
 | Role | Concern | Status |
-| --- | --- | --- |
+|---|---|---|
 | `common` | The package baseline, the periodic security upgrades and the configuration directories. The server's list minus the server-only removals; Shotwell and `shotwell-common` are retired (Loupe is the image viewer), and Avahi runs for the mDNS printer discovery (the location service's GPS-over-mDNS source stays off). No GNOME Shell extension, extension switcher or Tweaks: the packages are purged, and an apt `Pin-Priority: -1` makes apt refuse to install `gnome-tweaks` and `gnome-shell-extension-prefs` again. | implemented |
 | `identity` | The product's name on the machine: os-release, `/etc/issue`, the login banner, the machine identity. `identity_product` is `workstation-gnome`. | implemented |
 | `journald` | The journal's size and retention. | implemented |
 | `keyboard` | The console keyboard, and GRUB's copy of it. | implemented |
 | `hardening` | The server's kernel and system hardening, without the Bluetooth core blacklist; `bnep` stays blacklisted and `rfcomm` is available for HFP/SAP/OBEX. It adds the desktop's kernel line (`splash`) and an optional console shell. The `/tmp` drop-in is derived from fstab, never from the live mount. Unprivileged user namespaces are enabled for GNOME's default applications (Loupe/glycin, Flatpak-based applications); a site closes them with `hardening_unprivileged_userns_clone: 0`, except `gaming_enabled: true`, which keeps them at 1 for Steam. | implemented |
-| `performance` | The server's declared tuning, with `dbus-broker` as the system and user-manager bus provider and `daemon` as the rollback. | implemented |
+| `performance` | The server's declared tuning, with `dbus-broker` as the system and user-manager bus provider and Debian's `dbus-daemon` as the rollback. | implemented |
 | `power` | Hibernation, hybrid sleep and suspend-then-hibernate disabled by default: the sleep drop-in, the masked targets and the logind read-back (a refused `systemctl hibernate`). `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file, replays a failed rebuild, and refuses a host whose running kernel was not booted with `resume=`. It never creates, converts, formats or encrypts a swap and never writes GRUB. | implemented |
 | `network` | The link, owned by NetworkManager: a `systemd-networkd` host is handed over from a detached oneshot; a site-managed Wi-Fi profile is verified, never overwritten. The boot-mode keyfile takes a declared static address and DNS, refuses a reboot with neither resolver, and carries the Wi-Fi key derived from the passphrase. | implemented |
 | `resolver` | The stub resolver, taking the link DNS NetworkManager hands it. | implemented |
@@ -19,7 +19,7 @@ a new role is added to this table in the same change that creates it.
 | `gnome` | `gnome-core` and Debian's desktop task, the product's only desktop; Papers and Showtime are pinned before the meta-package and Evince/Totem are retired; a Wayland session must exist. | implemented |
 | `desktop` | The human account's desktop groups (including CUPS's `lpadmin`), its canonical locale (written through Debian's `/etc/default/locale` symlink) and the Bluetooth daemon. The account itself is a precondition. | implemented |
 | `dconf` | The profile-wide GNOME policy, as data: appearance, wallpaper, screen lock, privacy, no shell extension (the set is empty and locked), favorites and the application-grid folders (Utilities, System, Media, Office, Graphics, Internet). The folders are the grid's initial state; an account's arrangement lives in `app-picker-layout` and is reset to rebuild it. The screen blank delay is the account's (15 minutes default); choosing Never disables the idle blank and lock, while the screen lock and the suspend policy stay locked. | implemented |
-| `applications` | The declared desktop applications (LibreOffice, Evolution, Inkscape, GIMP, GNOME Secrets, GNOME Logs, VLC) and Mozilla Firefox; the role adds Mozilla's pinned apt repository, purges `firefox-esr`, retires the old VSCodium default, and declares VLC as the default handler for video/audio MIME types. | implemented |
+| `applications` | The declared applications (Ptyxis, LibreOffice, Evolution, Inkscape, GIMP, GNOME Secrets, GNOME Music, VLC, Foliate, GNOME Logs) and Mozilla Firefox; the role adds Mozilla's pinned apt repository, purges `firefox-esr`, retires the old VSCodium default, and declares VLC as the default handler for video/audio MIME types. | implemented |
 | `developer` | The declared developer tool groups via `developer_tools` (build, debug, clang, dotnet, search, lint, ansible, database, python, network, packaging, bench, test, shell, docs, jre, vscodium, scripts); Debian packages, the .NET 10 SDK from Microsoft's official repository when `dotnet` is selected, VSCodium from its pinned repository when `vscodium` is selected, and the latest Scripts interpreter from its public GitHub release when `scripts` is selected. No editor by default, no dotfile or service, and no LaTeX group. | implemented |
 | `coding_agents` | Opt-in OpenCode for the human account: the vendor's installer, pinned by version and SHA-256, the machine-wide `/etc/opencode/opencode.json` and the PATH drop-in. No model, provider or credential is declared. | implemented |
 | `gaming` | The opt-in gaming stack: Debian's Steam installer, controller rules, `gamemode`, `mangohud` and the 32-bit mesa/vulkan stack. Keeps unprivileged user namespaces at 1 for Steam's pressure-vessel sandbox, even when a site sets `hardening_unprivileged_userns_clone: 0`. Requires Debian `contrib` and i386; inert unless `gaming_enabled` is true. Steam is proprietary, isolated and opt-in. | implemented |
