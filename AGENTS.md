@@ -38,13 +38,15 @@ files.
 - A release is a signed tag `v<version>` and three assets: the collection
   tarball, the source tarball and `SHA256SUMS`.
 - `roles/README.md` is the role catalog; the README is the product's face.
+- Issues and discussions are disabled: the pull request is the review surface,
+  and the task board lives outside the repository.
 
 ## Commits and releases
 
 - One branch per task, `work/<slug>`; one concern per commit; English,
   imperative subject; the body says why.
-- Commits and tags are GPG-signed. A change lands on `main` only when
-  `tools/scripts/binaries/gate.scs` prints `VERDICT: PASS`; a release is the maintainer's decision.
+- Commits and tags are GPG-signed. CI runs the gate on every pull request; a red
+  gate blocks the merge. A release is the maintainer's decision.
 
 ## Security
 

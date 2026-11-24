@@ -1,8 +1,8 @@
 # The product's visuals
 
-Workstation Edition ships an emerald visual set under the same
-`AGPL-3.0-or-later` as the code: a wallpaper, a GDM mark and a GRUB image. The
-SVG sources are next to the rendered PNGs, so the set can be regenerated.
+Workstation Edition ships an emerald visual set under the code's licence,
+`AGPL-3.0-or-later`: a wallpaper, a GDM mark and a GRUB image. The SVG sources
+sit next to the rendered PNGs, so the set can be regenerated.
 
 | File | Size | Used by | Installed as |
 |---|---|---|---|
@@ -12,9 +12,9 @@ SVG sources are next to the rendered PNGs, so the set can be regenerated.
 | `workstation-grub.svg` / `workstation-grub.png` | 1920×1080 | the GRUB menu's image | `/boot/grub/workstation-grub.png` |
 | `transparent.png` | 1×1 | a neutral placeholder | (not installed) |
 
-The `branding` role reads them from this directory and nowhere else. The
-displayed name is `Workstation Edition`; a site overrides `identity_name` and
-supplies its own files from its own path.
+The `branding` role takes its default sources from this directory; a site that
+overrides `identity_name` and the `branding_*_source` variables supplies its own
+files from its own path.
 
 ## The Plymouth theme
 

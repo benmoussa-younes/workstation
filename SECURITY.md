@@ -4,14 +4,14 @@
 
 | Version | Supported |
 |---|---|
-| 0.3.x | yes |
+| 0.4.x | yes |
 | older | no |
 
 A release is supported until a later release explicitly withdraws it. Debian
 amd64 is the supported base; a future Debian release is added when the product
 declares it.
 
-Security fixes are considered on a **best-effort** basis for the current 0.3.x
+Security fixes are considered on a **best-effort** basis for the current 0.4.x
 tree. There is no long-term support branch, support contract, response-time
 guarantee or warranty, express or implied. The product is distributed under
 **AGPL-3.0-or-later**, the documentation under **CC-BY-SA-4.0** and the Plymouth
@@ -20,7 +20,8 @@ theme under **GPL-2.0-or-later**, without warranty, as stated in
 
 ## Reporting a vulnerability
 
-Do not open a public issue. Report it privately to:
+Issues and discussions are disabled on this repository: a vulnerability is never
+reported in public. Report it privately to:
 
 **younes.benmoussa@pm.me**
 
