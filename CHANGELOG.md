@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`security_mdns_enabled: true`).
 - `printing` installs `avahi-daemon` and adds the human account to `lpadmin`;
   `desktop` declares `lpadmin` in its default group set.
+- A site whose `security_ssh_sources` is empty (SSH anywhere) must decide mDNS
+  too: `security_mdns_sources_anywhere: true`, or `security_mdns_enabled:
+  false`. An empty `security_mdns_sources` fails the converge otherwise.
 
 ### Security
 
