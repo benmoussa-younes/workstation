@@ -39,8 +39,8 @@ power_initramfs_marker: /var/lib/power/initramfs-resume
 # a later file (a site's, or a distribution's numbered higher) overrides it. The
 # read-back below catches an override of hibernation; in `disabled` mode the
 # suspend-then-hibernate verb is checked too, and the three targets are read
-# back masked. A hybrid-sleep override is caught by `CanHibernate`, which the
-# same configuration gates.
+# back masked. A hybrid-sleep override is caught by the masked
+# `hybrid-sleep.target`: `CanHibernate` is the hibernation verb, not the hybrid.
 power_sleep_conf: /etc/systemd/sleep.conf.d/50-workstation.conf
 
 # The file `hardening` writes the kernel command line to. This role only READS
