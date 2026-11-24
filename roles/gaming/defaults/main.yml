@@ -24,9 +24,11 @@ gaming_debian_suite: "{{ identity_debian_release_name | default('') }}"
 gaming_debian_sources_file: /etc/apt/sources.list
 
 # Steam's pressure-vessel sandbox needs unprivileged user namespaces. The
-# `hardening` role disables them with `60-hardening.conf`; this drop-in loads
-# after it and re-enables them on an opt-in gaming host. It is the one security
-# trade-off the gaming role makes, and it is scoped to `gaming_enabled: true`.
+# `hardening` role declares them (1 by default on the workstation); this drop-in
+# loads after `60-hardening.conf` and keeps them at 1 on an opt-in gaming host
+# even when a site sets `hardening_unprivileged_userns_clone: 0`. It is the one
+# security trade-off the gaming role makes, and it is scoped to
+# `gaming_enabled: true`.
 gaming_userns_sysctl: /etc/sysctl.d/61-gaming-userns.conf
 
 # The amd64 tools. `steam-devices` carries the controller udev rules;

@@ -147,6 +147,16 @@ argument_specs:
         type: str
         required: false
         description: The hardening_userns_tool the role declares (defaults/main.yml).
+      hardening_unprivileged_userns_clone:
+        type: int
+        required: false
+        description: >-
+          Whether unprivileged user namespaces are enabled (1) or refused (0).
+          The workstation default is 1: GNOME's default applications -- Loupe's
+          glycin loaders and Flatpak -- spawn `bwrap`, which needs them. A site
+          sets 0 to close the kernel surface and accepts that those
+          applications stop working.
+        choices: [0, 1]
       hardening_sysctl_kept:
         type: list
         elements: str

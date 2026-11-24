@@ -139,6 +139,14 @@ hardening_needrestart_conf: /etc/needrestart/conf.d/50-workstation.conf
 hardening_userns_profile: /etc/apparmor.d/unprivileged_userns
 hardening_userns_tool: /usr/sbin/aa-enforce
 
+# Unprivileged user namespaces. The workstation keeps GNOME's default
+# applications -- Loupe's glycin image loaders and Flatpak both spawn `bwrap`,
+# which needs an unprivileged user namespace -- so the product enables them.
+# The AppArmor transition above was measured ineffective on Debian; this sysctl
+# is the lever that actually decides. A site that refuses the kernel surface
+# sets 0 and accepts that Loupe and Flatpak stop working: the cost is explicit.
+hardening_unprivileged_userns_clone: 1
+
 # Mount hardening. `/tmp` and `/dev/shm` are world-writable, so
 # nothing there may be executed. `/home` a distinct mount is a partitioning
 # decision (the storage subject, T6).
