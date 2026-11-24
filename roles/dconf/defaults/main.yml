@@ -62,13 +62,16 @@ dconf_clock_show_weekday: true
 
 # --- screen lock, idle and power --------------------------------------------
 #
-# The display blanks and locks after `dconf_idle_delay` seconds; the session never
-# suspends or hibernates, on AC or on battery. A workstation that suspends drops
-# the network and every SSH session with it.
+# The display blanks and locks after `dconf_idle_delay` seconds BY DEFAULT; the
+# delay itself is the ACCOUNT's (the key is not locked, and an account may
+# choose 15 minutes, another value or Never). The screen lock and the suspend
+# policy stay the product's: the session never suspends or hibernates, on AC or
+# on battery. A workstation that suspends drops the network and every SSH
+# session with it.
 
 dconf_lock_enabled: true
 dconf_lock_delay: 0
-dconf_idle_delay: 300
+dconf_idle_delay: 900
 dconf_sleep_ac: nothing
 dconf_sleep_battery: nothing
 dconf_sleep_ac_timeout: 0
@@ -136,7 +139,9 @@ dconf_keyfiles:
 
 # The locks, by file: each path becomes read-only for the user. The lists are what
 # the reference workstation locks, adapted to this product's names -- the appearance keys, the screen
-# lock and idle policy, the privacy policy and the extension set.
+# lock and suspend policy, the privacy policy and the extension set. The idle
+# delay is deliberately NOT locked: the product declares 15 minutes as the
+# default and lets the account change it (or choose Never).
 #
 # `favorite-apps` and the font names are deliberately NOT locked: the product
 # declares their start value and lets the account change them. Every key that IS
@@ -146,7 +151,6 @@ dconf_locks:
   01-workstation-lock:
     - /org/gnome/desktop/screensaver/lock-enabled
     - /org/gnome/desktop/screensaver/lock-delay
-    - /org/gnome/desktop/session/idle-delay
     - /org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type
     - /org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type
     - /org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-timeout
@@ -205,6 +209,9 @@ dconf_readback:
   - key: /org/gnome/desktop/background/picture-uri-dark
     contains:
       - "'{{ dconf_wallpaper_uri }}'"
+  - key: /org/gnome/desktop/session/idle-delay
+    contains:
+      - "uint32 {{ dconf_idle_delay }}"
   - key: /org/gnome/shell/favorite-apps
     contains: "{{ dconf_favorite_apps }}"
   - key: /org/gnome/shell/enabled-extensions

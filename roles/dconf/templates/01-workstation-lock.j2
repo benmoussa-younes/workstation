@@ -1,7 +1,10 @@
 # Managed by Ansible; do not edit.
 #
-# The screen-lock and idle policy. `01-workstation-lock` in this database's `locks/`
-# directory makes every key here non-overridable by the user.
+# The screen-lock, idle and suspend policy. `01-workstation-lock` in this
+# database's `locks/` directory makes every key here non-overridable by the
+# user -- except the idle delay: it is the product's DEFAULT, declared here, and
+# the account may change it or choose Never. The screen lock and the suspend
+# policy stay locked.
 #
 # The display blanks and locks; the session never suspends or hibernates, on AC or
 # on battery, so the machine stays reachable over SSH. `lock-delay` and

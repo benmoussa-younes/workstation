@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-24
+
+### Changed
+
+- The screen blank delay is the account's. `/org/gnome/desktop/session/idle-delay`
+  is no longer locked; the system default is 15 minutes (`dconf_idle_delay:
+  900`), and an account may choose another value or Never. The screen lock and
+  the suspend policy stay locked. Measured on the laptop (2026-11-24):
+  `gsettings writable` was false with the lock and 300 s; after unlocking and
+  `dconf update`, it is true and the value is 900 s.
+
 ## [0.3.1] - 2026-11-21
 
 ### Removed
