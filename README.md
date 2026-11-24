@@ -43,7 +43,8 @@ ships.
   hardening — and Avahi retired rather than half-configured. Unprivileged user
   namespaces stay enabled so GNOME's default applications work (Loupe's glycin
   loaders, Flatpak); a site closes them with
-  `hardening_unprivileged_userns_clone: 0`.
+  `hardening_unprivileged_userns_clone: 0`, except `gaming_enabled: true`,
+  which keeps them at 1 for Steam.
 - **Provable by construction**: every role reads its own change back, a second
   converge must print `changed=0`, and a declared address is proved by the boot
   that uses it.
@@ -148,7 +149,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `identity` | The product name on os-release, issue, issue.net and the login banner. |
 | `journald` | The journal's size and retention. |
 | `keyboard` | The console keyboard and GRUB's copy. |
-| `hardening` | The kernel and system policy, `graphical.target`, `splash` and the reboot policy. Unprivileged user namespaces are enabled for GNOME's default applications (Loupe/glycin, Flatpak); a site closes them with `hardening_unprivileged_userns_clone`. |
+| `hardening` | The kernel and system policy, `graphical.target`, `splash` and the reboot policy. Unprivileged user namespaces are enabled for GNOME's default applications (Loupe/glycin, Flatpak); a site closes them with `hardening_unprivileged_userns_clone`, except `gaming_enabled: true`, which keeps them at 1 for Steam. |
 | `performance` | The declared VM, I/O and TCP tuning, THP, the CPU governor and the D-Bus provider (`dbus-broker` by default, `dbus-daemon` as the rollback). |
 | `network` | NetworkManager owns the link; a Wi-Fi site that handed it over itself is verified, not overwritten. The Wi-Fi key is stored derived from the passphrase, never in clear. |
 | `resolver` | The stub resolver, fed by the link or by a declared filtering resolver. |

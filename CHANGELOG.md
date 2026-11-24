@@ -17,15 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kernel.unprivileged_userns_clone=0` refuses. Measured on the laptop
   (2026-11-24): `bwrap` answers "No permissions to create a new namespace",
   Loupe logs a decoding error then opens its failure window; with 1, the loaders
-  start and the image opens. A site sets 0 to close the kernel surface and
-  accepts that Loupe and Flatpak stop working.
+  start and Loupe reports no decoding error. A site sets 0 to close the kernel
+  surface and accepts that Loupe and Flatpak-based applications stop working;
+  `gaming_enabled: true` keeps them at 1 for Steam.
 
 ### Security
 
 - The cost of refusing unprivileged user namespaces is now stated where it is
-  decided: the sysctl file names Loupe/glycin and Flatpak, not only rootless
-  containers. The AppArmor transition stays enforced but was measured
-  ineffective on Debian.
+  decided: the sysctl file names Loupe/glycin and Flatpak-based applications,
+  not only rootless containers. The final value is asserted at the end of the
+  play, after the `gaming` role's override. The AppArmor transition stays
+  enforced but was measured ineffective on Debian.
 
 ## [0.3.1] - 2026-11-21
 

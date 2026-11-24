@@ -85,29 +85,6 @@
 - name: The kernel settings are applied now
   ansible.builtin.meta: flush_handlers
 
-- name: The unprivileged user namespace setting is read
-  ansible.builtin.command:  # noqa: command-instead-of-module
-    cmd: /usr/sbin/sysctl -n kernel.unprivileged_userns_clone
-  register: hardening_userns_clone_state
-  changed_when: false
-  when: not ansible_check_mode
-
-- name: The unprivileged user namespace setting is the declared one
-  # The gaming role may set it to 1 after this role; here the declared value is
-  # the one this file owns, and a file numbered higher would override it.
-  ansible.builtin.assert:
-    that:
-      - >-
-        (hardening_userns_clone_state.stdout | trim)
-        == (hardening_unprivileged_userns_clone | string)
-    fail_msg: >-
-      {{ inventory_hostname }} runs
-      kernel.unprivileged_userns_clone={{ hardening_userns_clone_state.stdout | trim }},
-      not the declared {{ hardening_unprivileged_userns_clone }}. Read
-      `{{ hardening_sysctl_file }}` and `sysctl --system`: a file numbered
-      higher overrides the declared value.
-  when: not ansible_check_mode
-
 - name: The audit trail and post-upgrade restarts are installed
   ansible.builtin.apt:
     name:

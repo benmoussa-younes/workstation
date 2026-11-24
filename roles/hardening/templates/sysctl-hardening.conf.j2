@@ -101,12 +101,13 @@ kernel.core_pattern = {{ hardening_core_pattern }}
 net.ipv6.conf.all.accept_ra = 1
 net.ipv6.conf.default.accept_ra = 1
 
-# Unprivileged user namespaces. They are the largest unprivileged LPE surface,
+# Unprivileged user namespaces. They are a major unprivileged LPE surface,
 # AND the mechanism `bwrap` needs: the workstation keeps GNOME's default
-# applications (Loupe's glycin image loaders, Flatpak), so the product enables
-# them by default. The AppArmor transition this role enforces was MEASURED
-# INEFFECTIVE on Debian: a new userns process stays `unconfined`;
-# `unprivileged_userns_clone` is the lever that actually decides. A site that
-# refuses the surface sets `hardening_unprivileged_userns_clone: 0` and accepts
-# that Loupe and Flatpak stop working.
-kernel.unprivileged_userns_clone = {{ hardening_unprivileged_userns_clone }}
+# applications (Loupe's glycin image loaders, Flatpak-based applications), so
+# the product enables them by default. The AppArmor transition this role
+# enforces was MEASURED INEFFECTIVE on Debian: a new userns process stays
+# `unconfined`; `unprivileged_userns_clone` is the lever that actually decides.
+# A site that refuses the surface sets `hardening_unprivileged_userns_clone: 0`;
+# `gaming_enabled: true` keeps them at 1 for Steam, and Loupe/Flatpak then work
+# again.
+kernel.unprivileged_userns_clone = {{ hardening_unprivileged_userns_clone | int }}

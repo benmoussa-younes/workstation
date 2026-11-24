@@ -69,9 +69,10 @@ argument_specs:
         type: str
         required: false
         description: >-
-          The sysctl drop-in that re-enables unprivileged user namespaces for
-          Steam's pressure-vessel sandbox. It loads after the hardening role's
-          `60-hardening.conf`, which disables them on a non-gaming host.
+          The sysctl drop-in that keeps unprivileged user namespaces at 1 for
+          Steam's pressure-vessel sandbox. The hardening role declares them (1
+          by default); this file loads after `60-hardening.conf` and keeps them
+          at 1 even when a site sets `hardening_unprivileged_userns_clone: 0`.
       gaming_package_cache_valid_time:
         type: int
         required: false
