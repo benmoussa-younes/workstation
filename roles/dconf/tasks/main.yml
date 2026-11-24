@@ -79,7 +79,7 @@
 - name: The keyfiles already in the database are listed
   ansible.builtin.find:
     paths: "{{ dconf_db_dir }}"
-    file_type: any
+    file_type: file
     hidden: true
     recurse: false
   register: dconf_existing_keyfiles
