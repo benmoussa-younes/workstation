@@ -62,6 +62,14 @@ argument_specs:
         type: str
         required: false
         description: The location service's configuration file.
+      common_avahi_enabled:
+        type: bool
+        required: false
+        description: >-
+          Whether Avahi runs for the GNOME Add Printer discovery through the
+          CUPS `dnssd` backend (the default). False retires the daemon and its
+          activation path; the site then loses the network printer discovery
+          and sets `security_mdns_enabled: false` too.
       common_absent_packages:
         type: list
         elements: str

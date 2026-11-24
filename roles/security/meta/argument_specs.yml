@@ -65,6 +65,27 @@ argument_specs:
           `security_ssh_sources_required` is true; set
           `security_ssh_sources_anywhere: true` to expose sshd to the world
           deliberately.
+      security_mdns_enabled:
+        type: bool
+        required: false
+        description: >-
+          Whether mDNS (UDP 5353) is accepted for the GNOME Add Printer
+          discovery through the CUPS `dnssd` backend. True by default; a site
+          that refuses sets false and loses the discovery.
+      security_mdns_sources:
+        type: list
+        elements: str
+        required: false
+        description: >-
+          The sources mDNS is accepted from. It follows `security_ssh_sources`
+          (the site's local link) unless the site declares otherwise.
+      security_mdns_sources_anywhere:
+        type: bool
+        required: false
+        description: >-
+          Whether mDNS may come from every source when `security_mdns_sources`
+          is empty. False refuses that empty list, like the SSH source
+          restriction; a site sets it true deliberately.
       security_extra_services:
         type: list
         elements: dict

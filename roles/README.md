@@ -6,7 +6,7 @@ a new role is added to this table in the same change that creates it.
 
 | Role | Concern | Status |
 | --- | --- | --- |
-| `common` | The package baseline, the periodic security upgrades and the configuration directories. The server's list minus the server-only removals; Shotwell and `shotwell-common` are retired (Loupe is the image viewer), and Avahi is retired with its unit alias and D-Bus activation file masked/diverted. No GNOME Shell extension, extension switcher or Tweaks: the packages are purged, and an apt `Pin-Priority: -1` makes apt refuse to install `gnome-tweaks` and `gnome-shell-extension-prefs` again. | implemented |
+| `common` | The package baseline, the periodic security upgrades and the configuration directories. The server's list minus the server-only removals; Shotwell and `shotwell-common` are retired (Loupe is the image viewer), and Avahi runs for the mDNS printer discovery (the location service's GPS-over-mDNS source stays off). No GNOME Shell extension, extension switcher or Tweaks: the packages are purged, and an apt `Pin-Priority: -1` makes apt refuse to install `gnome-tweaks` and `gnome-shell-extension-prefs` again. | implemented |
 | `identity` | The product's name on the machine: os-release, `/etc/issue`, the login banner, the machine identity. `identity_product` is `workstation-gnome`. | implemented |
 | `journald` | The journal's size and retention. | implemented |
 | `keyboard` | The console keyboard, and GRUB's copy of it. | implemented |
@@ -17,7 +17,7 @@ a new role is added to this table in the same change that creates it.
 | `resolver` | The stub resolver, taking the link DNS NetworkManager hands it. | implemented |
 | `time` | Exactly one time daemon, and the declared timezone. | implemented |
 | `gnome` | `gnome-core` and Debian's desktop task, the product's only desktop; Papers and Showtime are pinned before the meta-package and Evince/Totem are retired; a Wayland session must exist. | implemented |
-| `desktop` | The human account's desktop groups, its canonical locale (written through Debian's `/etc/default/locale` symlink) and the Bluetooth daemon. The account itself is a precondition. | implemented |
+| `desktop` | The human account's desktop groups (including CUPS's `lpadmin`), its canonical locale (written through Debian's `/etc/default/locale` symlink) and the Bluetooth daemon. The account itself is a precondition. | implemented |
 | `dconf` | The profile-wide GNOME policy, as data: appearance, wallpaper, screen lock, privacy, no shell extension (the set is empty and locked), favorites and the application-grid folders (Utilities, System, Media, Office, Graphics, Internet). The folders are the grid's initial state; an account's arrangement lives in `app-picker-layout` and is reset to rebuild it. The screen blank delay is the account's (15 minutes default); choosing Never disables the idle blank and lock, while the screen lock and the suspend policy stay locked. | implemented |
 | `applications` | The declared desktop applications (LibreOffice, Evolution, Inkscape, GIMP, GNOME Secrets, GNOME Logs, VLC) and Mozilla Firefox; the role adds Mozilla's pinned apt repository, purges `firefox-esr`, retires the old VSCodium default, and declares VLC as the default handler for video/audio MIME types. | implemented |
 | `developer` | The declared developer tool groups via `developer_tools` (build, debug, clang, dotnet, search, lint, ansible, database, python, network, packaging, bench, test, shell, docs, jre, vscodium, scripts); Debian packages, the .NET 10 SDK from Microsoft's official repository when `dotnet` is selected, VSCodium from its pinned repository when `vscodium` is selected, and the latest Scripts interpreter from its public GitHub release when `scripts` is selected. No editor by default, no dotfile or service, and no LaTeX group. | implemented |
@@ -25,11 +25,11 @@ a new role is added to this table in the same change that creates it.
 | `gaming` | The opt-in gaming stack: Debian's Steam installer, controller rules, `gamemode`, `mangohud` and the 32-bit mesa/vulkan stack. Keeps unprivileged user namespaces at 1 for Steam's pressure-vessel sandbox, even when a site sets `hardening_unprivileged_userns_clone: 0`. Requires Debian `contrib` and i386; inert unless `gaming_enabled` is true. Steam is proprietary, isolated and opt-in. | implemented |
 | `fonts` | The declared font families and the fontconfig proof. | implemented |
 | `audio` | The PipeWire package set, `alsa-ucm-conf` and the GStreamer codecs; the session proof is after login. The `alsa-utils` restore workaround is opt-in (`audio_fix_alsa_restore`, default false), available for hosts that show the udev warnings. | implemented |
-| `printing` | CUPS and the virtual PDF queue. A physical printer is site data. | implemented |
+| `printing` | CUPS, the virtual PDF queue and the network printer discovery (Avahi/mDNS; the human account in `lpadmin`; `cups-browsed` stays purged). | implemented |
 | `display` | GDM: the unit, `WaylandEnable` in `daemon.conf`, the greeter's logo key, the seat read back. Never a hand-made `display-manager.service` alias. | implemented |
 | `plymouth` | The Workstation boot splash: the theme, its boot/shutdown/reboot messages, its selection and the initramfs, read back. | implemented |
 | `branding` | The wallpaper, GDM's logo and GRUB's image, from this product's own assets. | implemented |
-| `security` | nftables input policy, sshd, the system-wide SSH client drop-in, the password and lockout policy. | implemented |
+| `security` | nftables input policy, sshd, the system-wide SSH client drop-in, the password and lockout policy. mDNS 5353 is accepted from the site's sources for the printer discovery. | implemented |
 
 The `security` role also writes `/etc/ssh/ssh_config.d/99-workstation.conf`. Debian
 includes that directory before its own `Host *` block, and `ssh_config` keeps the

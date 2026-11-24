@@ -173,7 +173,15 @@ common_refused_packages:
 # APT only reads `preferences.d` files whose name ends in `.pref`.
 common_refused_pin_file: /etc/apt/preferences.d/90-workstation-refused.pref
 
+# Avahi. The workstation lets the account add a network printer from GNOME: the
+# Add Printer panel enumerates the printers through the CUPS `dnssd` backend,
+# which uses Avahi. The daemon, its socket, the systemd alias and the D-Bus
+# activation file are therefore LIVE. A site that refuses mDNS sets this false
+# (and `security_mdns_enabled: false`); the location service's GPS-over-mDNS
+# source stays off below either way.
+common_avahi_enabled: true
+
 # The location service's configuration. Its network-NMEA source fetches a GPS
-# from the local network over mDNS; Avahi is retired below, so that source has
-# no transport and its probe is the one warning left at boot.
+# from the local network over mDNS; the source stays off even though Avahi runs
+# for the printer discovery.
 common_geoclue_config: /etc/geoclue/geoclue.conf

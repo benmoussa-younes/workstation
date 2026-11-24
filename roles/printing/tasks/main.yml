@@ -13,6 +13,40 @@
     state: present
     cache_valid_time: 3600
 
+# `cups` creates the `lpadmin` group; the account is added after the package,
+# not by `desktop` (which runs before `cups` on a fresh host and would skip a
+# group that does not exist yet). The group is CUPS's `SystemGroup` on Debian.
+- name: The human account can administer the local printers
+  ansible.builtin.user:
+    name: "{{ printing_admin_user }}"
+    groups: "{{ printing_admin_group }}"
+    append: true
+  when:
+    - printing_admin_user | length > 0
+    - not ansible_check_mode
+
+- name: The human account's groups are read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: id -nG {{ printing_admin_user | quote }}
+  register: printing_admin_state
+  changed_when: false
+  when:
+    - printing_admin_user | length > 0
+    - not ansible_check_mode
+
+- name: The human account is in the CUPS admin group
+  ansible.builtin.assert:
+    that:
+      - printing_admin_group in (printing_admin_state.stdout | default('')).split()
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ printing_admin_user }} is not in
+      `{{ printing_admin_group }}` (groups:
+      `{{ printing_admin_state.stdout | default('') | trim }}`); the GNOME Add
+      Printer panel cannot administer the local queues.
+  when:
+    - printing_admin_user | length > 0
+    - not ansible_check_mode
+
 - name: The print scheduler is enabled and started
   ansible.builtin.systemd_service:
     name: "{{ printing_service }}"
@@ -195,10 +229,11 @@
     - printing_manage_pdf_queue | bool
     - not ansible_check_mode
 
-# The browsing daemon has no job here: avahi is masked, no printer is shared.
-# It is the entry point of the 2024 CUPS RCE chain (CVE-2024-47176 and the
-# cups-filters set), so the package goes, and cupsd stops browsing and serving
-# its web interface on loopback.
+# The legacy browsing daemon stays out: it is the entry point of the 2024 CUPS
+# RCE chain (CVE-2024-47176 and the cups-filters set). Discovery is the CUPS
+# `dnssd` backend, which uses Avahi (kept live by `common` and `security` for
+# the GNOME Add Printer panel); cupsd stops its own legacy browsing and the web
+# interface.
 - name: The CUPS browsing daemon is not installed
   ansible.builtin.apt:
     name: cups-browsed

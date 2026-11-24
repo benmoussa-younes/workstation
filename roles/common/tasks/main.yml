@@ -291,9 +291,9 @@
     mode: "0755"
   loop: "{{ common_directories }}"
 
-# Avahi is masked in `finalize.yml`, at the end of the play: `gnome` and
-# `printing` install packages whose Recommends bring `avahi-daemon`, and masking
-# it here, before those installs, made the mask land on the next converge.
+# Avahi is configured in `finalize.yml`, at the end of the play: `gnome` and
+# `printing` install packages whose Recommends bring `avahi-daemon`, and the
+# daemon is enabled (or retired when the site refuses mDNS) after those installs.
 
 # The periodic-upgrade mechanism, declared. The package is in
 # `common_packages`; these two files are its declaration. `unattended-upgrades`

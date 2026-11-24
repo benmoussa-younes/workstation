@@ -185,15 +185,16 @@
       tags: [plymouth]
 
     # The firewall and sshd. It runs LAST: it owns the nftables input chain, and
-    # the rules depend on what the other roles declared. It opens no port the
-    # desktop did not declare.
+    # the rules depend on what the other roles declared. It opens SSH and mDNS
+    # 5353 from the site's sources for the printer discovery; a consumer
+    # declares any other port through `security_extra_services`.
     - role: security
       tags: [security]
 
   post_tasks:
-    # Avahi is masked after every package install: `gnome` and `printing` pull
-    # it through Recommends, and a mask written before them is a change on the
-    # next converge.
+    # Avahi is enabled (or retired when the site refuses mDNS) after every
+    # package install: `gnome` and `printing` pull it through Recommends, and the
+    # finalize decides its state after those installs.
     - name: The desktop services are finalized
       ansible.builtin.import_role:
         name: common
