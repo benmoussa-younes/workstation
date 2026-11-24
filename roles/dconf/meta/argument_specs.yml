@@ -132,7 +132,10 @@ argument_specs:
       dconf_idle_delay:
         type: int
         required: false
-        description: Seconds of inactivity before the screen blanks (a uint32 key).
+        description: >-
+          The system default idle delay in seconds (a uint32 key). The account
+          may change it or choose Never, which disables the idle blank and the
+          idle lock; the screen-lock and suspend keys stay locked.
       dconf_sleep_ac:
         type: str
         required: false

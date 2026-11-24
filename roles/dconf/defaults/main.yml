@@ -5,9 +5,10 @@
 # the SYSTEM half of it: the values declared here are the defaults every account
 # starts from, and the files in `locks/` make the SELECTED keys non-overridable.
 # A user's own database still wins on every key that is NOT locked -- which is
-# why appearance, the screen lock, the suspend policy and privacy are locked,
-# while the idle delay and the pinned applications are not (a user may choose
-# Never, or pin another application; the product only declares the start value).
+# why the wallpaper, the clock and button layout, the screen lock, the suspend
+# policy and privacy are locked, while the theme, the accent, the fonts, the idle
+# delay and the pinned applications are not (a user may choose a scheme, a delay
+# or Never, or pin another application; the product declares the start value).
 #
 # The values are the reference workstation's, the workstation this product was proved on, with two
 # deliberate changes: the wallpaper points at THIS product's file (installed by
