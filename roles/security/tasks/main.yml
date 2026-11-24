@@ -12,6 +12,20 @@
       deliberately.
   when: security_ssh_sources_required | bool
 
+# The mDNS sources follow the SSH sources; emptying them must be a decision too.
+- name: The mDNS source restriction is decided
+  ansible.builtin.assert:
+    that:
+      - >-
+        (security_mdns_sources | length > 0)
+        or (security_mdns_sources_anywhere | bool)
+        or not (security_mdns_enabled | bool)
+    fail_msg: >-
+      security_mdns_enabled is true and security_mdns_sources is empty on
+      {{ inventory_hostname }}: the printer discovery would be open to every
+      source. Declare the site's networks, set
+      `security_mdns_sources_anywhere: true`, or disable mDNS.
+
 # The SSH port is the link the play itself uses on a remote host. Moving it from
 # that session would cut the only path back, so a change is a CONSOLE operation:
 # `ansible_connection=local` (or an already matching `ansible_port`) is the only

@@ -25,6 +25,28 @@
     - printing_admin_user | length > 0
     - not ansible_check_mode
 
+- name: The human account's groups are read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: id -nG {{ printing_admin_user | quote }}
+  register: printing_admin_state
+  changed_when: false
+  when:
+    - printing_admin_user | length > 0
+    - not ansible_check_mode
+
+- name: The human account is in the CUPS admin group
+  ansible.builtin.assert:
+    that:
+      - printing_admin_group in (printing_admin_state.stdout | default('')).split()
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ printing_admin_user }} is not in
+      `{{ printing_admin_group }}` (groups:
+      `{{ printing_admin_state.stdout | default('') | trim }}`); the GNOME Add
+      Printer panel cannot administer the local queues.
+  when:
+    - printing_admin_user | length > 0
+    - not ansible_check_mode
+
 - name: The print scheduler is enabled and started
   ansible.builtin.systemd_service:
     name: "{{ printing_service }}"

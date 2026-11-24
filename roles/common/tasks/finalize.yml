@@ -90,6 +90,7 @@
     cmd: systemctl is-active avahi-daemon.service
   register: common_avahi_active
   changed_when: false
+  failed_when: false
   when:
     - common_avahi_enabled | bool
     - common_avahi_present.stat.exists

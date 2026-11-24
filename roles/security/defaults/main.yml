@@ -68,6 +68,9 @@ security_ssh_sources: []
 # local link); a site that refuses mDNS sets this false and loses the discovery.
 security_mdns_enabled: true
 security_mdns_sources: "{{ security_ssh_sources }}"
+# An empty `security_mdns_sources` renders `udp dport 5353 accept` from every
+# source; like the SSH sources, that must be a decision, not an omission.
+security_mdns_sources_anywhere: false
 
 # Additional reachable services, declared by the roles that need them:
 #   security_extra_services:

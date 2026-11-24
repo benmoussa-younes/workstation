@@ -30,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Avahi and mDNS are a deliberate surface for the printer discovery, and
-  `lpadmin` lets the account administer the local CUPS queues. A site that
-  refuses sets `common_avahi_enabled: false` and `security_mdns_enabled: false`.
+  `lpadmin` is CUPS's `SystemGroup`: the account can add, modify and remove the
+  local queues and their device URIs. A site that refuses sets
+  `common_avahi_enabled: false` and `security_mdns_enabled: false` together.
 
 ## [0.4.0] - 2026-11-24
 
