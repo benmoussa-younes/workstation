@@ -60,7 +60,8 @@ security_ruleset_snapshot: /var/lib/workstation/nftables.applied
 # is true by default, so a site that leaves it empty FAILS the converge instead
 # of exposing sshd: an empty list must be a decision
 # (`security_ssh_sources_anywhere: true`), never an omission. A site narrows it
-# to its own subnet.
+# to its own subnet; IPv4 and IPv6 CIDRs are both accepted, and the ruleset
+# renders `ip saddr` and `ip6 saddr` accordingly.
 security_ssh_sources: []
 
 # mDNS, for the GNOME Add Printer panel: the CUPS `dnssd` backend enumerates the

@@ -61,8 +61,8 @@ argument_specs:
         elements: str
         required: false
         description: >-
-          Networks or addresses allowed to reach sshd. Empty is refused when
-          `security_ssh_sources_required` is true; set
+          Networks or addresses (IPv4 or IPv6 CIDR) allowed to reach sshd.
+          Empty is refused when `security_ssh_sources_required` is true; set
           `security_ssh_sources_anywhere: true` to expose sshd to the world
           deliberately.
       security_mdns_enabled:
@@ -77,8 +77,9 @@ argument_specs:
         elements: str
         required: false
         description: >-
-          The sources mDNS is accepted from. It follows `security_ssh_sources`
-          (the site's local link) unless the site declares otherwise.
+          The sources (IPv4 or IPv6 CIDR) mDNS is accepted from. It follows
+          `security_ssh_sources` (the site's local link) unless the site
+          declares otherwise.
       security_mdns_sources_anywhere:
         type: bool
         required: false
@@ -92,8 +93,9 @@ argument_specs:
         required: false
         description: >-
           Reachable services declared by other roles, as port/proto and an
-          optional `sources` list of networks to scope them to. A service with
-          no `sources` is reachable from anywhere the policy otherwise allows.
+          optional `sources` list of IPv4 or IPv6 networks to scope them to. A
+          service with no `sources` is reachable from anywhere the policy
+          otherwise allows.
       security_extra_protocols:
         type: list
         elements: dict

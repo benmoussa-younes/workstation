@@ -201,6 +201,20 @@
         tasks_from: finalize.yml
       tags: [common]
 
+    # Two switches decide the network printer discovery: `common_avahi_enabled`
+    # runs the daemon, `security_mdns_enabled` opens the firewall. One without
+    # the other is an open port with no responder, or a daemon no packet
+    # reaches; the discovery is silent in both cases.
+    - name: The Avahi and mDNS switches agree
+      ansible.builtin.assert:
+        that:
+          - (common_avahi_enabled | default(true)) == (security_mdns_enabled | default(true))
+        fail_msg: >-
+          common_avahi_enabled={{ common_avahi_enabled | default(true) }} and
+          security_mdns_enabled={{ security_mdns_enabled | default(true) }}:
+          the GNOME Add Printer discovery needs both (the daemon and the
+          firewall), or neither. Set them together.
+
     # The site's address is only proved by the boot that uses it: the keyfile
     # written above is read by NetworkManager at boot, not by this run. The
     # machine comes back at the address the site declared, so the proof play
