@@ -145,7 +145,7 @@ hardening_userns_tool: /usr/sbin/aa-enforce
 # product enables them. The AppArmor transition above was measured ineffective
 # on Debian; this sysctl is the lever that actually decides. A site that refuses
 # the kernel surface sets 0; `gaming_enabled: true` keeps them at 1 for Steam,
-# and Loupe/Flatpak then work again. The cost is explicit.
+# and Loupe and Flatpak-based applications then work again. The cost is explicit.
 hardening_unprivileged_userns_clone: 1
 
 # Mount hardening. `/tmp` and `/dev/shm` are world-writable, so
