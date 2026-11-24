@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# systemd reads this drop-in after `/etc/systemd/sleep.conf` and before a
+# higher-numbered drop-in. logind parses the effective file on every sleep
+# request, so the read-back in the role is immediate and no daemon reload is
+# needed.
+#
+# `AllowHibernation` gates hibernation itself; `AllowHybridSleep` gates hybrid
+# sleep, which writes the same memory image to the swap before suspending.
+[Sleep]
+{% if power_hibernation == 'enabled' %}
+AllowHibernation=yes
+AllowHybridSleep=yes
+{% else %}
+AllowHibernation=no
+AllowHybridSleep=no
+{% endif %}

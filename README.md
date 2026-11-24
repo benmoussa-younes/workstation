@@ -45,6 +45,11 @@ ships.
   loaders, Flatpak-based applications); a site closes them with
   `hardening_unprivileged_userns_clone: 0`, except `gaming_enabled: true`,
   which keeps them at 1 for Steam.
+- **No hibernation by default**: a hibernation image is the whole memory
+  written to swap, and the product does not encrypt the swap. `power` masks the
+  hibernation targets and proves logind refuses the verb; a site that accepts
+  the risk sets `power_hibernation: enabled` with `power_resume_device` and
+  declares `resume=` in `hardening_kernel_cmdline`.
 - **Provable by construction**: every role reads its own change back, a second
   converge must print `changed=0`, and a declared address is proved by the boot
   that uses it.
@@ -151,6 +156,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `keyboard` | The console keyboard and GRUB's copy. |
 | `hardening` | The kernel and system policy, `graphical.target`, `splash` and the reboot policy. Unprivileged user namespaces are enabled for GNOME's default applications (Loupe/glycin, Flatpak-based applications); a site closes them with `hardening_unprivileged_userns_clone`, except `gaming_enabled: true`, which keeps them at 1 for Steam. |
 | `performance` | The declared VM, I/O and TCP tuning, THP, the CPU governor and the D-Bus provider (`dbus-broker` by default, `dbus-daemon` as the rollback). |
+| `power` | Hibernation disabled by default: the sleep drop-in, the masked hibernation targets and the logind read-back. `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file and refuses a host whose running kernel was not booted with `resume=`. |
 | `network` | NetworkManager owns the link; a Wi-Fi site that handed it over itself is verified, not overwritten. The Wi-Fi key is stored derived from the passphrase, never in clear. |
 | `resolver` | The stub resolver, fed by the link or by a declared filtering resolver. |
 | `time` | Exactly one time daemon and the declared zone. |

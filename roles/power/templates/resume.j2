@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The initramfs resumes from this device before the root filesystem is mounted.
+# `update-initramfs -u` copies this file into the boot image; the role notifies
+# that rebuild, and a file on disk without the rebuild is not the image that
+# boots.
+RESUME={{ power_resume_device }}
