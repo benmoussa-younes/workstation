@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-24
+
+### Added
+
+- The GNOME Add Printer panel lists the network printers and the human account
+  can add one: Avahi runs, mDNS (UDP 5353) is accepted from the site's
+  `security_ssh_sources`, the CUPS `dnssd` backend enumerates, and the account
+  is in `lpadmin`. The legacy `cups-browsed` stays purged (CVE-2024-47176); the
+  modern backend does the discovery. No printer is declared in the site.
+
+### Changed
+
+- `common` no longer masks Avahi (`common_avahi_enabled: true`): the unit, the
+  socket, the systemd alias and the D-Bus activation file are live. The
+  location service's GPS-over-mDNS source stays off.
+- `security` opens mDNS 5353 from `security_ssh_sources`
+  (`security_mdns_enabled: true`).
+- `printing` installs `avahi-daemon` and adds the human account to `lpadmin`;
+  `desktop` declares `lpadmin` in its default group set.
+
+### Security
+
+- Avahi and mDNS are a deliberate surface for the printer discovery, and
+  `lpadmin` lets the account administer the local CUPS queues. A site that
+  refuses sets `common_avahi_enabled: false` and `security_mdns_enabled: false`.
+
 ## [0.4.0] - 2026-11-24
 
 ### Added

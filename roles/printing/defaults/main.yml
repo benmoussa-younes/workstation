@@ -14,9 +14,17 @@
 printing_packages:
   - cups
   - cups-filters               # the filters a PPD queue needs (pdftops, texttopdf)
+  - avahi-daemon               # the printer discovery the GNOME panel uses
   - printer-driver-cups-pdf    # the PDF backend and its two PPDs
 
 printing_service: cups
+
+# The human account administers the local queues. Debian's CUPS uses
+# `SystemGroup lpadmin`; the group exists once `cups` is installed, and the
+# printing role adds the account after that installation. The account is the
+# site's (`workstation_user`); an empty value leaves the groups alone.
+printing_admin_user: "{{ workstation_user | default('') }}"
+printing_admin_group: lpadmin
 
 # The PDF queue, declared. `-E` (enabled) and accepting are part of the
 # declaration: a queue that exists and refuses jobs is not a queue.

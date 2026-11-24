@@ -1,15 +1,19 @@
 ---
 argument_specs:
   main:
-    short_description: CUPS, the print scheduler and the virtual PDF queue.
+    short_description: CUPS, the print scheduler, the virtual PDF queue and the network printer discovery.
     description:
       - >-
-        Installs CUPS and `printer-driver-cups-pdf` (Debian's binary package
-        name; `cups-pdf` is only the source package in the current Debian release), enables and
-        starts the scheduler, creates the declared PDF queue with the declared
-        PPD and options when it is absent, and reads the scheduler, the queue's
-        state and its device URI back. A physical printer is site data and is not
-        declared here.
+        Installs CUPS, `avahi-daemon` and `printer-driver-cups-pdf` (Debian's
+        binary package name; `cups-pdf` is only the source package in the
+        current Debian release), enables and starts the scheduler, creates the
+        declared PDF queue with the declared PPD and options when it is absent,
+        and reads the scheduler, the queue's state and its device URI back. The
+        human account is added to CUPS's `lpadmin` group. The network printers
+        are discovered by the GNOME Add Printer panel through Avahi and the
+        CUPS `dnssd` backend (the `common` and `security` roles keep the daemon
+        and mDNS live); no printer is declared here and the legacy
+        `cups-browsed` stays purged.
     author: Younes BENMOUSSA
     options:
       printing_packages:
@@ -21,6 +25,17 @@ argument_specs:
         type: str
         required: false
         description: The print scheduler's systemd unit.
+      printing_admin_user:
+        type: str
+        required: false
+        description: >-
+          The human account added to `printing_admin_group` after CUPS creates
+          it; it defaults to `workstation_user` and an empty value leaves the
+          groups alone.
+      printing_admin_group:
+        type: str
+        required: false
+        description: The CUPS admin group (Debian's `SystemGroup`).
       printing_manage_pdf_queue:
         type: bool
         required: false

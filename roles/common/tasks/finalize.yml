@@ -1,62 +1,75 @@
 ---
 # The end-of-play services. `common` runs first, but `gnome`/`printing` install
-# packages whose Recommends bring `avahi-daemon`; masking it before those
-# installs left the mask for the next converge. This file runs in `post_tasks`,
+# packages whose Recommends bring `avahi-daemon`; this file runs in `post_tasks`,
 # after every package the desktop declares.
+#
+# Avahi is LEFT RUNNING when `common_avahi_enabled` is true (the default): the
+# GNOME Add Printer panel enumerates the network printers through the CUPS
+# `dnssd` backend, which needs it. The unit, its socket, the systemd alias and
+# the D-Bus activation file are all made live. A site that refuses mDNS sets the
+# variable false and the role retires them as before.
 
-- name: Whether the unconfigured Avahi daemon is installed is known
+- name: Whether the Avahi daemon is installed is known
   ansible.builtin.stat:
     path: /usr/sbin/avahi-daemon
   register: common_avahi_present
 
-# `masked: true` is what makes the unit unstartable. It is not combined with
-# `enabled: false`: a masked unit reports `is-enabled = masked`, and the module
-# would report a change it does not make.
-- name: The unconfigured Avahi daemon cannot be started
+# The service is `TriggeredBy=avahi-daemon.socket`: starting it while the
+# socket is still masked fails with "Unit avahi-daemon.socket is masked". The
+# masks come off BOTH units first, then the socket starts the service.
+- name: The Avahi units are unmasked
   ansible.builtin.systemd_service:
     name: "{{ item }}"
-    state: stopped
-    masked: true
+    masked: false
   loop:
-    - avahi-daemon.service
     - avahi-daemon.socket
+    - avahi-daemon.service
   when:
+    - common_avahi_enabled | bool
     - common_avahi_present.stat.exists
     - not ansible_check_mode
 
-# The package ships two more ways to start the daemon this product refuses to
-# run: the unit alias `/etc/systemd/system/dbus-org.freedesktop.Avahi.service`
-# and the D-Bus activation file
-# `/usr/share/dbus-1/system-services/org.freedesktop.Avahi.service`. Masking the
-# unit alone leaves both pointing at a masked target, so every client that asks
-# for the name makes the bus log a failure at boot (measured on Debian 13:
-# `File exists` under `dbus-daemon`, `Activation request ... failed` under
-# `dbus-broker`). Retire both: the alias is masked by hand, because
-# `systemctl mask` refuses a name that already is a symlink, and the activation
-# file is diverted so the bus answers `The name is not activatable` and logs
-# nothing. `dbus-broker` does not ignore a service file symlinked to
-# `/dev/null` (measured: it reports the missing `D-Bus Service` section), so
-# the file is diverted rather than shadowed.
-- name: The Avahi unit alias is masked
+- name: The Avahi daemon runs for the printer discovery
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - avahi-daemon.socket
+    - avahi-daemon.service
+  when:
+    - common_avahi_enabled | bool
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+# The unit's `[Install] Alias=dbus-org.freedesktop.Avahi.service` is the name
+# the D-Bus activation point uses. The retirement wrote a `/dev/null` symlink
+# there; the live state points at the unit itself. The link is DECLARED, not
+# removed: an `absent` followed by `enable` would change on every converge.
+- name: The Avahi unit alias points at the daemon
   ansible.builtin.file:
-    src: /dev/null
+    src: /usr/lib/systemd/system/avahi-daemon.service
     dest: /etc/systemd/system/dbus-org.freedesktop.Avahi.service
     state: link
     force: true
   when:
+    - common_avahi_enabled | bool
     - common_avahi_present.stat.exists
     - not ansible_check_mode
   notify: Reload systemd
 
-- name: The Avahi D-Bus activation file is diverted
+# The activation file was diverted by the retirement; restoring it renames the
+# package's own copy back. `removes` makes the task idempotent: it runs only
+# while the diverted copy exists.
+- name: The Avahi D-Bus activation file is restored
   ansible.builtin.command:  # noqa: command-instead-of-module
-    # A local diversion: the package keeps owning the file, an upgrade writes
-    # its new copy to `.distrib`, and the bus has no activation path to offer.
     cmd: >-
-      dpkg-divert --local --rename --add
+      dpkg-divert --local --rename --remove
       /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service
-    creates: /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service.distrib
+  args:
+    removes: /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service.distrib
   when:
+    - common_avahi_enabled | bool
     - common_avahi_present.stat.exists
     - not ansible_check_mode
 
@@ -66,7 +79,90 @@
   loop:
     - /etc/systemd/system/dbus-org.freedesktop.Avahi.service
     - /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service
+  register: common_avahi_live
+  when:
+    - common_avahi_enabled | bool
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+- name: The Avahi daemon state is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl is-active avahi-daemon.service
+  register: common_avahi_active
+  changed_when: false
+  when:
+    - common_avahi_enabled | bool
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+- name: The Avahi bus activation path is live and the daemon runs
+  ansible.builtin.assert:
+    that:
+      - >-
+        common_avahi_live.results[0].stat.lnk_source | default('')
+        == '/usr/lib/systemd/system/avahi-daemon.service'
+      - common_avahi_live.results[1].stat.exists
+      - common_avahi_active.stdout | trim == 'active'
+    fail_msg: >-
+      {{ inventory_hostname }}: the GNOME Add Printer panel cannot enumerate the
+      network printers. The alias is
+      `{{ common_avahi_live.results[0].stat.lnk_source | default('absent') }}`,
+      the activation file
+      {{ 'exists' if common_avahi_live.results[1].stat.exists else 'is gone' }},
+      and the daemon is `{{ common_avahi_active.stdout | trim }}`.
+  when:
+    - common_avahi_enabled | bool
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+# The false path: the retirement, kept for a site that refuses mDNS.
+- name: The Avahi daemon is retired when the site refuses mDNS
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    masked: true
+  loop:
+    - avahi-daemon.service
+    - avahi-daemon.socket
+  when:
+    - not (common_avahi_enabled | bool)
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+- name: The Avahi unit alias is masked when the site refuses mDNS
+  ansible.builtin.file:
+    src: /dev/null
+    dest: /etc/systemd/system/dbus-org.freedesktop.Avahi.service
+    state: link
+    force: true
+  when:
+    - not (common_avahi_enabled | bool)
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+  notify: Reload systemd
+
+- name: The Avahi D-Bus activation file is diverted when the site refuses mDNS
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: >-
+      dpkg-divert --local --rename --add
+      /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service
+    creates: /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service.distrib
+  when:
+    - not (common_avahi_enabled | bool)
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
+
+- name: The Avahi bus activation path is read back when the site refuses mDNS
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/systemd/system/dbus-org.freedesktop.Avahi.service
+    - /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service
   register: common_avahi_retired
+  when:
+    - not (common_avahi_enabled | bool)
+    - common_avahi_present.stat.exists
+    - not ansible_check_mode
 
 - name: The Avahi bus activation path is retired
   ansible.builtin.assert:
@@ -80,14 +176,13 @@
       and the activation file
       {{ 'exists' if common_avahi_retired.results[1].stat.exists else 'is gone' }}.
   when:
+    - not (common_avahi_enabled | bool)
     - common_avahi_present.stat.exists
     - not ansible_check_mode
 
 # `geoclue` reaches for mDNS to fetch NMEA from a GPS on the local network
-# (`[network-nmea]`). mDNS is retired above, so that source has no transport
-# and its probe is the one line still written at boot. The source is declared
-# off instead of being left to fail: the product keeps no mDNS path at all,
-# and the location service keeps its other sources.
+# (`[network-nmea]`). Avahi runs for the printer discovery, but a GPS on the LAN
+# is not a printer: the source is declared off instead of being left to probe.
 - name: Whether the location service has a configuration is known
   ansible.builtin.stat:
     path: "{{ common_geoclue_config }}"

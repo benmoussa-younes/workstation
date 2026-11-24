@@ -63,6 +63,12 @@ security_ruleset_snapshot: /var/lib/workstation/nftables.applied
 # to its own subnet.
 security_ssh_sources: []
 
+# mDNS, for the GNOME Add Printer panel: the CUPS `dnssd` backend enumerates the
+# network printers through Avahi. The sources follow the SSH sources (the site's
+# local link); a site that refuses mDNS sets this false and loses the discovery.
+security_mdns_enabled: true
+security_mdns_sources: "{{ security_ssh_sources }}"
+
 # Additional reachable services, declared by the roles that need them:
 #   security_extra_services:
 #     - { port: 53, proto: udp }

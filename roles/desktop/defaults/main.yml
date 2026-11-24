@@ -45,6 +45,11 @@ workstation_desktop_groups:  # noqa: var-naming[no-role-prefix]
   - bluetooth
   - cdrom
   - plugdev
+  # CUPS's admin group. This role adds only groups the host already has, and
+  # `cups` is installed later in the play: `printing` adds the account after the
+  # package. This entry records the intended group and adds it on a converge
+  # where CUPS is already installed.
+  - lpadmin
   # GNOME Logs reads the journal through this group; without it the panel opens
   # with an error and asks for credentials it cannot use.
   - systemd-journal

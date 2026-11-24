@@ -35,6 +35,13 @@ table inet {{ security_firewall_table }} {
         udp dport 68 accept
         udp dport 546 accept
 
+        # mDNS: the printer discovery (Avahi through CUPS's `dnssd` backend).
+        # The sources follow the site's SSH sources; a site that refuses sets
+        # `security_mdns_enabled: false` and loses the discovery.
+{% if security_mdns_enabled %}
+        udp dport 5353{% if security_mdns_sources %} ip saddr { {{ security_mdns_sources | join(', ') }} }{% endif %} accept
+{% endif %}
+
         # SSH, from the declared sources when any are named.
         tcp dport {{ security_ssh_port }}{% if security_ssh_sources %} ip saddr { {{ security_ssh_sources | join(', ') }} }{% endif %} accept
 {% for service in security_extra_services %}
