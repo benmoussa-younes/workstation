@@ -5,12 +5,14 @@ argument_specs:
     description:
       - >-
         Installs `dconf-cli`, declares the session's dconf profile, writes the
-        system-wide keyfiles (appearance, screen lock and idle, privacy, the
-        extension set and the pinned applications) and the locks that make the
-        declared keys non-overridable, compiles the database through a handler,
-        then reads every declared value back from the compiled database through
-        the profile a session uses. GDM's logo is NOT declared here: it is a
-        greeter key owned by the `display` role.
+        system-wide keyfiles (appearance, screen lock, suspend policy, idle
+        default, privacy, the extension set and the pinned applications) and the
+        locks that make the SELECTED keys non-overridable (the idle delay and
+        the favorites stay the account's), compiles the database through a
+        handler, then reads every declared value back from the compiled database
+        through the profile a session uses. It also refuses a lock file it does
+        not declare, and proves the idle delay is not locked. GDM's logo is NOT
+        declared here: it is a greeter key owned by the `display` role.
     author: Younes BENMOUSSA
     options:
       dconf_package:

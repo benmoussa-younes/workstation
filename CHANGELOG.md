@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the suspend policy stay locked. Measured on the laptop (2026-11-24):
   `gsettings writable` was false with the lock and 300 s; after unlocking and
   `dconf update`, it is true and the value is 900 s.
+- The role now refuses a lock file it does not declare in
+  `/etc/dconf/db/local.d/locks` (a leftover from a previous layout could lock a
+  key the product leaves to the account) and reads the screen-policy lock file
+  back to prove `idle-delay` is not in it.
+
+### Security
+
+- The idle blank is the account's choice: the screen-lock and suspend keys stay
+  locked, but choosing Never disables the idle trigger, so the session is not
+  locked by inactivity. The product default is 15 minutes.
 
 ## [0.3.1] - 2026-11-21
 

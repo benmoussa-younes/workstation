@@ -66,6 +66,59 @@
     label: "{{ item.key }}"
   notify: Update the dconf database
 
+# `locks/` is read as a whole: a lock file a previous layout left (the old
+# edition's `01-bitcrafts-lock`, measured on `desktop`) can lock a key this role
+# leaves to the account even when the declared file does not. The same rule as
+# the keyfiles: only the declared files may live there.
+- name: Whether the lock directory exists is known
+  ansible.builtin.stat:
+    path: "{{ dconf_locks_dir }}"
+  register: dconf_locks_dir_state
+
+- name: The lock files already present are listed
+  ansible.builtin.find:
+    paths: "{{ dconf_locks_dir }}"
+    file_type: file
+    recurse: false
+  register: dconf_existing_locks
+  when: dconf_locks_dir_state.stat.isdir | default(false)
+
+- name: The lock directory holds only the declared locks
+  ansible.builtin.assert:
+    that:
+      - >-
+        dconf_existing_locks.files | default([]) | map(attribute='path') | map('basename')
+        | difference(dconf_locks | dict2items | map(attribute='key') | list) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: a lock file this product does not declare is in
+      {{ dconf_locks_dir }}:
+      {{ dconf_existing_locks.files | default([]) | map(attribute='path') | map('basename')
+         | difference(dconf_locks | dict2items | map(attribute='key') | list) }}.
+      dconf reads every file in `locks/`, so a leftover can lock a key this role
+      leaves to the account. Move it out of the directory, then converge again.
+  when: dconf_locks_dir_state.stat.isdir | default(false)
+
+# The value read-back below proves the compiled DEFAULT; it cannot prove the key
+# is writable, because `dconf read` returns the same value whether the key is
+# locked or not. The rendered lock file is the lock's own proof.
+- name: The rendered screen-policy lock file is read
+  ansible.builtin.slurp:
+    src: "{{ dconf_locks_dir }}/01-workstation-lock"
+  register: dconf_screen_lock_file
+  when: not ansible_check_mode
+
+- name: The idle delay is not locked
+  ansible.builtin.assert:
+    that:
+      - >-
+        '/org/gnome/desktop/session/idle-delay'
+        not in (dconf_screen_lock_file.content | b64decode)
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ dconf_locks_dir }}/01-workstation-lock` still
+      locks `/org/gnome/desktop/session/idle-delay`; the account cannot change
+      the screen blank delay.
+  when: not ansible_check_mode
+
 # Every file in `local.d` is compiled into the database, whatever its name, and
 # they are read in name order: a keyfile a previous layout wrote (the reference workstation's
 # `00-workstation`) sorts AFTER `00-workstation` and would decide the keys this role
