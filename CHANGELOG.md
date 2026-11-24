@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-24
+
+### Added
+
+- The `power` role declares the power policy. Hibernation is disabled by
+  default: the sleep drop-in sets `AllowHibernation=no` and
+  `AllowHybridSleep=no`, `hibernate.target` and `hybrid-sleep.target` are
+  masked, and the role proves the result by reading `CanHibernate` from logind
+  and by a `systemctl hibernate` that must fail. An `enabled` site must declare
+  `power_resume_device`; the role writes
+  `/etc/initramfs-tools/conf.d/resume` and notifies `update-initramfs -u`.
+- `power` refuses to enable hibernation before the running kernel was booted
+  with `resume=<device>`. The kernel line is `hardening`'s
+  (`hardening_kernel_cmdline`), and the role reads it instead of editing GRUB.
+  The console proof (a real hibernate and resume) is the only proof, and the
+  role says so.
+
+### Security
+
+- Hibernation writes the whole memory image, including every secret the host
+  holds at that instant, to a swap this product does not encrypt. It is off by
+  default and never presented as a security property; enabling it is the site's
+  documented trade-off. The role creates, converts, formats and encrypts no
+  swap.
+
 ## [0.3.1] - 2026-11-21
 
 ### Removed

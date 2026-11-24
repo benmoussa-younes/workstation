@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.3.1-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.3.1)
+[![Release](https://img.shields.io/badge/release-0.4.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.4.0)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -41,6 +41,11 @@ ships.
 - **A security baseline**: nftables input default-deny with SSH restricted to
   your sources, a hardened sshd and SSH client, a password policy, kernel and audit
   hardening — and Avahi retired rather than half-configured.
+- **No hibernation by default**: a hibernation image is the whole memory
+  written to swap, and the product does not encrypt the swap. `power` masks the
+  hibernation targets and proves logind refuses the verb; a site that accepts
+  the risk sets `power_hibernation: enabled` with `power_resume_device` and
+  declares `resume=` in `hardening_kernel_cmdline`.
 - **Provable by construction**: every role reads its own change back, a second
   converge must print `changed=0`, and a declared address is proved by the boot
   that uses it.
@@ -76,10 +81,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.3.1.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.4.0.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.3.1-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.4.0-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -147,6 +152,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `keyboard` | The console keyboard and GRUB's copy. |
 | `hardening` | The kernel and system policy, `graphical.target`, `splash` and the reboot policy. |
 | `performance` | The declared VM, I/O and TCP tuning, THP, the CPU governor and the D-Bus provider (`dbus-broker` by default, `dbus-daemon` as the rollback). |
+| `power` | Hibernation disabled by default: the sleep drop-in, the masked hibernation targets and the logind read-back. `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file and refuses a host whose running kernel was not booted with `resume=`. |
 | `network` | NetworkManager owns the link; a Wi-Fi site that handed it over itself is verified, not overwritten. The Wi-Fi key is stored derived from the passphrase, never in clear. |
 | `resolver` | The stub resolver, fed by the link or by a declared filtering resolver. |
 | `time` | Exactly one time daemon and the declared zone. |
@@ -242,7 +248,7 @@ workstation keeps the firewall, SSH, account and desktop policy. The `virbr*`
 and `libvirt_nat` rules, the `virt-manager` favorite and `qemu-guest-agent` were
 removed with the role.
 
-`0.3.1` is the current release. Debian amd64 is the only supported base; a newer
+`0.4.0` is the current release. Debian amd64 is the only supported base; a newer
 Debian release is added when the product declares it. The product is maintained
 by one author; there is no support contract, service level or warranty, express
 or implied (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md)).

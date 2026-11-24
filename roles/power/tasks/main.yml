@@ -1,0 +1,214 @@
+---
+# The power policy: hibernation is disabled unless the site enables it.
+#
+# The role reads its own change back. Writing the sleep drop-in and masking the
+# targets is the declaration; logind's answer and a refused `systemctl hibernate`
+# are the proof. In `enabled` mode the proof is a real hibernate and resume at
+# the console: this role never hibernates the machine and never writes GRUB.
+
+- name: The host uses systemd
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.service_mgr == 'systemd'
+    fail_msg: "{{ inventory_hostname }} does not use systemd."
+
+# The preconditions of `enabled` are read BEFORE anything is written: a host
+# whose running kernel was not booted with `resume=` is left untouched, and the
+# message says which boot it waits for.
+- name: The site declares the device hibernation resumes from
+  ansible.builtin.assert:
+    that:
+      - power_resume_device | trim | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }}: power_hibernation is `enabled` and
+      power_resume_device is empty. Declare the swap device the kernel resumes
+      from (`UUID=...` or a stable path).
+  when: power_hibernation == 'enabled'
+
+- name: The site accepts the unencrypted-swap risk
+  # Unconditional in `enabled` mode, including on the run that refuses the host:
+  # the risk is the site's decision, and the operator must see it stated.
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: hibernation is ENABLED by the site. A hibernation
+      image is the whole memory of this host written to swap, and this product
+      does not encrypt the swap: unless the site's own layer encrypts it, every
+      secret the machine holds at that instant is written in clear to disk. This
+      is an accepted risk, not a security property. The proof is a real
+      hibernate and resume at the console; a `--check` proves nothing here.
+  when: power_hibernation == 'enabled'
+
+- name: The declared kernel command line is read
+  ansible.builtin.slurp:
+    src: "{{ power_grub_default }}"
+  register: power_grub_read
+  when:
+    - power_hibernation == 'enabled'
+    - not ansible_check_mode
+
+- name: The kernel line declares the resume device
+  ansible.builtin.assert:
+    that:
+      - ("resume=" ~ power_resume_device) in (power_grub_read.content | b64decode)
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ power_grub_default }}` does not carry
+      `resume={{ power_resume_device }}`. Add it to `hardening_kernel_cmdline`
+      (that role owns GRUB), converge, and reboot.
+  when:
+    - power_hibernation == 'enabled'
+    - not ansible_check_mode
+
+- name: The running kernel command line is read
+  ansible.builtin.slurp:
+    src: /proc/cmdline
+  register: power_cmdline_read
+  when:
+    - power_hibernation == 'enabled'
+    - not ansible_check_mode
+
+- name: The running kernel was booted to resume from the declared device
+  ansible.builtin.assert:
+    that:
+      - ("resume=" ~ power_resume_device) in (power_cmdline_read.content | b64decode)
+    fail_msg: >-
+      {{ inventory_hostname }}: the running kernel was booted without
+      `resume={{ power_resume_device }}`, so a hibernation image would have no
+      device to resume from. The declaration belongs to `hardening_kernel_cmdline`
+      and takes effect at the next boot: reboot and run the play again.
+      Hibernation is not enabled before the kernel resumes from the declared
+      device.
+  when:
+    - power_hibernation == 'enabled'
+    - not ansible_check_mode
+
+- name: The sleep policy is declared
+  ansible.builtin.template:
+    src: sleep.conf.j2
+    dest: "{{ power_sleep_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: The hibernation targets are masked when hibernation is disabled
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop:
+    - hibernate.target
+    - hybrid-sleep.target
+  when: power_hibernation == 'disabled'
+
+- name: The hibernation targets are unmasked when the site enables hibernation
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: false
+  loop:
+    - hibernate.target
+    - hybrid-sleep.target
+  when: power_hibernation == 'enabled'
+
+# A switch back to `disabled` leaves this file in place: it names the device a
+# hibernation WOULD resume from, and no hibernation image is written while the
+# policy is disabled. The role does not remove a file the installer may own.
+- name: The initramfs resume configuration is declared
+  ansible.builtin.template:
+    src: resume.j2
+    dest: /etc/initramfs-tools/conf.d/resume
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Rebuild the initramfs
+  when: power_hibernation == 'enabled'
+
+- name: The hibernation targets are read back
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl is-enabled {{ item }}
+  loop:
+    - hibernate.target
+    - hybrid-sleep.target
+  register: power_target_states
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The hibernation targets are in the state the policy declares
+  ansible.builtin.assert:
+    that:
+      - >-
+        (power_hibernation == 'disabled' and (item.stdout | trim) == 'masked')
+        or (power_hibernation == 'enabled' and (item.stdout | trim) != 'masked')
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ item.item }} answers
+      `{{ item.stdout | trim }}` (rc {{ item.rc }}), not the state
+      power_hibernation `{{ power_hibernation }}` declares.
+  loop: "{{ power_target_states.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode
+
+# `CanHibernate` is a METHOD of `org.freedesktop.login1.Manager`, not a property
+# of the systemd manager: `systemctl show -p CanHibernate` prints nothing and
+# exits 0 (measured on systemd 257). This is the call `systemctl hibernate`
+# itself makes, and logind parses the sleep files on every request, so the answer
+# reflects the drop-in written above.
+- name: The sleep verb logind offers is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: >-
+      busctl call org.freedesktop.login1 /org/freedesktop/login1
+      org.freedesktop.login1.Manager CanHibernate
+  register: power_can_hibernate
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Logind offers the sleep verb the policy declares
+  ansible.builtin.assert:
+    that:
+      - >-
+        (power_hibernation == 'disabled'
+         and (power_can_hibernate.stdout | trim) in ['s "no"', 's "na"'])
+        or (power_hibernation == 'enabled'
+            and (power_can_hibernate.stdout | trim) in ['s "yes"', 's "challenge"'])
+    fail_msg: >-
+      {{ inventory_hostname }}: logind answers
+      `{{ power_can_hibernate.stdout | trim }}` for CanHibernate, which
+      contradicts `power_hibernation: {{ power_hibernation }}`. A drop-in
+      numbered higher than `{{ power_sleep_conf }}` can re-enable a verb this
+      policy closes: read `/etc/systemd/sleep.conf.d/`. A `na` in `enabled`
+      mode means logind finds no usable swap or resume device for the declared
+      `power_resume_device`.
+  when: not ansible_check_mode
+
+# The probe runs only when logind answered `no`: with that answer the verb
+# cannot hibernate the machine, so the task proves the refusal instead of
+# risking a real hibernation in the middle of a converge. `na` (no swap, no
+# resume device) already means the verb is unavailable and is not probed.
+- name: Hibernation is attempted and refused
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: systemctl hibernate
+  register: power_hibernate_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - power_hibernation == 'disabled'
+    - power_can_hibernate.stdout | trim == 's "no"'
+
+- name: The refused hibernation is what the policy claims
+  ansible.builtin.assert:
+    that:
+      - power_hibernate_probe.rc | default(1) | int != 0
+    fail_msg: >-
+      {{ inventory_hostname }}: `systemctl hibernate` answered rc 0 while
+      hibernation is disabled, so the policy is not in force.
+  when:
+    - not ansible_check_mode
+    - power_hibernation == 'disabled'
+    - power_can_hibernate.stdout | trim == 's "no"'
+
+- name: The console proof is stated
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: the declaration is applied. It is proved only by
+      a real hibernate and resume at the console (`systemctl hibernate`, power
+      on, then `journalctl -b`); a converge or a `--check` does not prove it.
+  when: power_hibernation == 'enabled'

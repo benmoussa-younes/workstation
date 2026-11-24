@@ -89,6 +89,14 @@
     - role: performance
       tags: [performance]
 
+    # The power policy: hibernation is disabled by default, because a hibernation
+    # image is the whole memory written to a swap this product does not encrypt.
+    # The role masks the hibernation targets and proves logind refuses the verb;
+    # `enabled` is the site's explicit decision and needs a declared resume
+    # device, while the kernel line stays `hardening`'s.
+    - role: power
+      tags: [power]
+
     # The link's owner: NetworkManager, and no systemd-networkd beside it. On a
     # Wi-Fi site that already handed the radio over by hand, the inventory says
     # `network_profile_managed: false`; the role then verifies and never writes

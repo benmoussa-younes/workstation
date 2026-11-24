@@ -1,0 +1,9 @@
+---
+# `update-initramfs -u` copies `/etc/initramfs-tools/conf.d/resume` into the
+# boot image. Without the rebuild the file on disk is right and the image that
+# boots still resumes from the previous device.
+- name: Rebuild the initramfs
+  ansible.builtin.command:
+    cmd: update-initramfs -u
+  changed_when: true
+  when: not ansible_check_mode
