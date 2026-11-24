@@ -37,8 +37,10 @@ power_initramfs_marker: /var/lib/power/initramfs-resume
 # The sleep drop-in. systemd parses the drop-ins sorted by file name across all
 # config directories: `50-` wins against a distribution file numbered lower, and
 # a later file (a site's, or a distribution's numbered higher) overrides it. The
-# read-back below catches an override of hibernation, hybrid sleep or
-# suspend-then-hibernate instead of letting it win silently.
+# read-back below catches an override of hibernation; in `disabled` mode the
+# suspend-then-hibernate verb is checked too, and the three targets are read
+# back masked. A hybrid-sleep override is caught by `CanHibernate`, which the
+# same configuration gates.
 power_sleep_conf: /etc/systemd/sleep.conf.d/50-workstation.conf
 
 # The file `hardening` writes the kernel command line to. This role only READS

@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The firewall accepts IPv6 sources: SSH, mDNS, the extra services and the
   forward flows render `ip6 saddr` (or `ip6 nexthdr`) when the site declares an
-  IPv6 CIDR; `ip saddr` alone rejected the ruleset.
+  IPv6 CIDR; `ip saddr` alone rejected the ruleset. A port or protocol without
+  sources is opened on both families, as a port already was.
 - The Avahi and mDNS switches are asserted together at the end of the play: a
   site that disables one without the other fails instead of opening 5353 with
   no responder, or running a daemon no packet reaches.
@@ -316,5 +317,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Wi-Fi keyfile is root-only and the interface is owned by NetworkManager.
 - The session is Wayland-only, with GDM's policy in a drop-in.
 
-[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.4.2...HEAD
 [0.1.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0

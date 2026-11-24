@@ -12,7 +12,7 @@
       - ansible_facts.service_mgr == 'systemd'
     fail_msg: "{{ inventory_hostname }} does not use systemd."
 
-- name: The sleep drop-in path is absolute
+- name: The power paths are absolute
   # The parent directory task below runs as root: a relative value would make it
   # manage the remote working directory as a directory, and `..` could make it
   # manage `/`.
@@ -20,9 +20,12 @@
     that:
       - power_sleep_conf is match('^/')
       - power_sleep_conf is not search('\.\.(/|$)')
+      - power_initramfs_marker is match('^/')
+      - power_initramfs_marker is not search('\.\.(/|$)')
     fail_msg: >-
-      {{ inventory_hostname }}: power_sleep_conf must be an absolute path
-      without `..`, not `{{ power_sleep_conf }}`.
+      {{ inventory_hostname }}: power_sleep_conf and power_initramfs_marker must
+      be absolute paths without `..`, not `{{ power_sleep_conf }}` and
+      `{{ power_initramfs_marker }}`.
 
 # The preconditions of `enabled` are read BEFORE anything is written: a host
 # whose running kernel was not booted with `resume=` is left untouched, and the
@@ -195,6 +198,13 @@
     - power_hibernation == 'disabled'
     - not ansible_check_mode
     - "'SPDX-License-Identifier: AGPL-3.0-or-later' in (power_resume_read.content | default('') | b64decode)"
+
+- name: The initramfs is rebuilt before the policy is read back
+  # The disabled removal notifies the rebuild; flushing it here means a later
+  # failure (the sleep template, the logind read-back) cannot lose it, and the
+  # next run sees the file already gone.
+  ansible.builtin.meta: flush_handlers
+  when: power_hibernation == 'disabled'
 
 - name: The sleep policy is declared
   ansible.builtin.template:
