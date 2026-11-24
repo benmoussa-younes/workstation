@@ -33,7 +33,9 @@ argument_specs:
       power_sleep_conf:
         type: str
         required: false
-        description: The systemd sleep drop-in the role writes and reads back.
+        description: >-
+          The systemd sleep drop-in the role writes; the effective verb is read
+          back from logind, not from the file.
       power_grub_default:
         type: str
         required: false

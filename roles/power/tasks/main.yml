@@ -12,17 +12,30 @@
       - ansible_facts.service_mgr == 'systemd'
     fail_msg: "{{ inventory_hostname }} does not use systemd."
 
+- name: The sleep drop-in path is absolute
+  # The parent directory task below runs as root: a relative value would make it
+  # manage the remote working directory as a directory.
+  ansible.builtin.assert:
+    that:
+      - power_sleep_conf is match('^/')
+    fail_msg: >-
+      {{ inventory_hostname }}: power_sleep_conf must be an absolute path, not
+      `{{ power_sleep_conf }}`.
+
 # The preconditions of `enabled` are read BEFORE anything is written: a host
 # whose running kernel was not booted with `resume=` is left untouched, and the
 # message says which boot it waits for.
 - name: The site declares the device hibernation resumes from
+  # A swap UUID or a stable `/dev` path, and nothing else: the value is written
+  # into a file the initramfs sources as root, so a newline, a `$(...)`, a
+  # backtick or a quote is refused here instead of reaching the boot.
   ansible.builtin.assert:
     that:
-      - power_resume_device | trim | length > 0
+      - power_resume_device is match('^(UUID=[0-9A-Fa-f-]+|/dev/[A-Za-z0-9._/-]+)$')
     fail_msg: >-
       {{ inventory_hostname }}: power_hibernation is `enabled` and
-      power_resume_device is empty. Declare the swap device the kernel resumes
-      from (`UUID=...` or a stable path).
+      power_resume_device is empty or not a swap device (`UUID=...` or
+      `/dev/...`). Declare the device the kernel resumes from.
   when: power_hibernation == 'enabled'
 
 - name: The site accepts the unencrypted-swap risk
@@ -47,9 +60,15 @@
     - not ansible_check_mode
 
 - name: The kernel line declares the resume device
+  # The quotes are replaced by spaces before the split: `update-grub` writes the
+  # last option against the closing quote, and that quote is not part of the
+  # option. `hardening` writes a single `GRUB_CMDLINE_LINUX_DEFAULT` line, so a
+  # comment line cannot carry the token.
   ansible.builtin.assert:
     that:
-      - ("resume=" ~ power_resume_device) in (power_grub_read.content | b64decode)
+      - >-
+        ("resume=" ~ power_resume_device)
+        in ((power_grub_read.content | b64decode) | replace('"', ' ') | split())
     fail_msg: >-
       {{ inventory_hostname }}: `{{ power_grub_default }}` does not carry
       `resume={{ power_resume_device }}`. Add it to `hardening_kernel_cmdline`
@@ -67,9 +86,12 @@
     - not ansible_check_mode
 
 - name: The running kernel was booted to resume from the declared device
+  # Exact token, not a substring: `resume=UUID=` must not match a longer UUID.
   ansible.builtin.assert:
     that:
-      - ("resume=" ~ power_resume_device) in (power_cmdline_read.content | b64decode)
+      - >-
+        ("resume=" ~ power_resume_device)
+        in ((power_cmdline_read.content | b64decode).split())
     fail_msg: >-
       {{ inventory_hostname }}: the running kernel was booted without
       `resume={{ power_resume_device }}`, so a hibernation image would have no
@@ -80,6 +102,42 @@
   when:
     - power_hibernation == 'enabled'
     - not ansible_check_mode
+
+- name: The sleep drop-in directory exists
+  # `template` fails when the destination directory is absent (measured on
+  # ansible-core 2.19) while `--check` reports the change without creating it:
+  # the dry run would be green and the converge would fail.
+  ansible.builtin.file:
+    path: "{{ power_sleep_conf | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The image is rebuilt BEFORE hibernation is declared: a file on disk that the
+# boot image does not carry is not a resume configuration, and a failed later
+# task must not leave hibernation enabled over the previous image.
+- name: The initramfs resume configuration is declared
+  # A switch back to `disabled` leaves this file in place: it names the device a
+  # hibernation WOULD resume from, and no hibernation image is written while the
+  # policy is disabled. The role does not remove a file the installer may own.
+  ansible.builtin.template:
+    src: resume.j2
+    dest: /etc/initramfs-tools/conf.d/resume
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Rebuild the initramfs
+  when: power_hibernation == 'enabled'
+
+- name: The initramfs is rebuilt before hibernation is declared
+  # `meta: flush_handlers` runs a notified handler now instead of at the end of
+  # the play, where a later failure would lose it: on the next run the template
+  # is unchanged, nothing notifies it again, and the image would never be
+  # rebuilt. The guard keeps the default mode from reordering other roles'
+  # pending handlers.
+  ansible.builtin.meta: flush_handlers
+  when: power_hibernation == 'enabled'
 
 - name: The sleep policy is declared
   ansible.builtin.template:
@@ -107,19 +165,6 @@
     - hybrid-sleep.target
   when: power_hibernation == 'enabled'
 
-# A switch back to `disabled` leaves this file in place: it names the device a
-# hibernation WOULD resume from, and no hibernation image is written while the
-# policy is disabled. The role does not remove a file the installer may own.
-- name: The initramfs resume configuration is declared
-  ansible.builtin.template:
-    src: resume.j2
-    dest: /etc/initramfs-tools/conf.d/resume
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Rebuild the initramfs
-  when: power_hibernation == 'enabled'
-
 - name: The hibernation targets are read back
   ansible.builtin.command:  # noqa: command-instead-of-module
     cmd: systemctl is-enabled {{ item }}
@@ -132,11 +177,15 @@
   when: not ansible_check_mode
 
 - name: The hibernation targets are in the state the policy declares
+  # `masked-runtime` is a mask too (it disappears at the next boot): the enabled
+  # read-back rejects it, or a runtime mask would survive `systemctl unmask`.
   ansible.builtin.assert:
     that:
       - >-
-        (power_hibernation == 'disabled' and (item.stdout | trim) == 'masked')
-        or (power_hibernation == 'enabled' and (item.stdout | trim) != 'masked')
+        (power_hibernation == 'disabled'
+         and (item.stdout | trim) in ['masked', 'masked-runtime'])
+        or (power_hibernation == 'enabled'
+            and (item.stdout | trim) not in ['masked', 'masked-runtime'])
     fail_msg: >-
       {{ inventory_hostname }}: {{ item.item }} answers
       `{{ item.stdout | trim }}` (rc {{ item.rc }}), not the state
@@ -148,9 +197,9 @@
 
 # `CanHibernate` is a METHOD of `org.freedesktop.login1.Manager`, not a property
 # of the systemd manager: `systemctl show -p CanHibernate` prints nothing and
-# exits 0 (measured on systemd 257). This is the call `systemctl hibernate`
-# itself makes, and logind parses the sleep files on every request, so the answer
-# reflects the drop-in written above.
+# exits 0 (measured on systemd 257). This is the same check `systemctl hibernate`
+# makes before it hibernates (`Manager.Hibernate` re-runs it), and logind parses
+# the sleep files on every request, so the answer reflects the drop-in above.
 - name: The sleep verb logind offers is read
   ansible.builtin.command:  # noqa: command-instead-of-module
     cmd: >-
@@ -161,27 +210,28 @@
   when: not ansible_check_mode
 
 - name: Logind offers the sleep verb the policy declares
+  # `AllowHibernation=no` is read BEFORE any swap check, so `disabled` must
+  # answer `no` exactly; `na` would mean the drop-in is overridden or unreadable.
   ansible.builtin.assert:
     that:
       - >-
         (power_hibernation == 'disabled'
-         and (power_can_hibernate.stdout | trim) in ['s "no"', 's "na"'])
+         and (power_can_hibernate.stdout | trim) == 's "no"')
         or (power_hibernation == 'enabled'
             and (power_can_hibernate.stdout | trim) in ['s "yes"', 's "challenge"'])
     fail_msg: >-
       {{ inventory_hostname }}: logind answers
       `{{ power_can_hibernate.stdout | trim }}` for CanHibernate, which
-      contradicts `power_hibernation: {{ power_hibernation }}`. A drop-in
-      numbered higher than `{{ power_sleep_conf }}` can re-enable a verb this
-      policy closes: read `/etc/systemd/sleep.conf.d/`. A `na` in `enabled`
-      mode means logind finds no usable swap or resume device for the declared
-      `power_resume_device`.
+      contradicts `power_hibernation: {{ power_hibernation }}`. In `disabled`
+      mode the answer must be `no`, and a drop-in numbered higher than
+      `{{ power_sleep_conf }}` can override it (read `/etc/systemd/sleep.conf.d/`).
+      In `enabled` mode `na` means logind finds no usable swap or resume device
+      for the declared `power_resume_device`.
   when: not ansible_check_mode
 
-# The probe runs only when logind answered `no`: with that answer the verb
-# cannot hibernate the machine, so the task proves the refusal instead of
-# risking a real hibernation in the middle of a converge. `na` (no swap, no
-# resume device) already means the verb is unavailable and is not probed.
+# The assert above requires `no`, so this probe cannot hibernate the machine:
+# `Manager.Hibernate` re-runs the same sleep-config check and answers "disabled
+# by config" (`SLEEP_DISABLED`) before it does anything.
 - name: Hibernation is attempted and refused
   ansible.builtin.command:  # noqa: command-instead-of-module
     cmd: systemctl hibernate

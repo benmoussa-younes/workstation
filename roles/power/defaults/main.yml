@@ -20,12 +20,16 @@ power_hibernation: disabled
 # (`/dev/disk/by-uuid/...`). It is site data and has no default; the role
 # refuses `enabled` without it. It must also be declared as `resume=<device>` in
 # `hardening_kernel_cmdline`: this role reads the line, it never writes GRUB.
+#
+# A site that switches back to `disabled` removes `resume=` from its own
+# `hardening_kernel_cmdline` and discards any hibernation image it holds: this
+# role cannot edit GRUB and never touches the swap.
 power_resume_device: ""
 
-# The sleep drop-in. `50-` sorts after the distribution's own drop-ins and
-# before a site file numbered higher; logind parses the effective file on every
-# request, so a later file that re-enables hibernation is caught by the
-# read-back instead of silently winning.
+# The sleep drop-in. systemd parses the drop-ins sorted by file name across all
+# config directories: `50-` wins against a distribution file numbered lower, and
+# a later file (a site's, or a distribution's numbered higher) overrides it. The
+# read-back below catches an override instead of letting it win silently.
 power_sleep_conf: /etc/systemd/sleep.conf.d/50-workstation.conf
 
 # The file `hardening` writes the kernel command line to. This role only READS

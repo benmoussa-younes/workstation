@@ -4,6 +4,6 @@
 # boots still resumes from the previous device.
 - name: Rebuild the initramfs
   ansible.builtin.command:
-    cmd: update-initramfs -u
+    cmd: /usr/sbin/update-initramfs -u
   changed_when: true
   when: not ansible_check_mode
