@@ -1,0 +1,40 @@
+---
+# The power policy.
+#
+# Hibernation writes the WHOLE memory image of the host to swap, and this
+# product does not encrypt the swap: unless the site's own layer encrypts it,
+# every secret the machine holds at that instant -- a secrets CLI passphrase, a
+# child process's environment, an unlocked key -- is written in clear to disk,
+# where it outlives the session until the swap block is reused. `disabled` is
+# therefore the product's default, and `enabled` is the site's explicit
+# acceptance of that risk, never a security property of this product.
+#
+# This role never creates, converts, formats or encrypts a swap: the swap is the
+# site's day-0 decision (`performance_swap_kind` is declarative only: it names
+# the kind, it does not create the swap). What this role owns is systemd's sleep
+# policy, the hibernation targets and, when enabled, the initramfs resume file.
+# The kernel command line belongs to `hardening` (`hardening_kernel_cmdline`).
+power_hibernation: disabled
+
+# The device the kernel resumes from: a swap UUID (`UUID=...`) or a stable path
+# (`/dev/disk/by-uuid/...`). It is site data and has no default; the role
+# refuses `enabled` without it. It must also be declared as `resume=<device>` in
+# `hardening_kernel_cmdline`: this role reads the line, it never writes GRUB.
+#
+# A site that switches back to `disabled` removes `resume=` from its own
+# `hardening_kernel_cmdline` and discards any hibernation image it holds: this
+# role cannot edit GRUB and never touches the swap.
+power_resume_device: ""
+
+# The sleep drop-in. systemd parses the drop-ins sorted by file name across all
+# config directories: `50-` wins against a distribution file numbered lower, and
+# a later file (a site's, or a distribution's numbered higher) overrides it. The
+# read-back below catches an override of hibernation or hybrid sleep instead of
+# letting it win silently; `AllowSuspendThenHibernate` is a separate verb, and
+# its hibernate step still goes through the refused `Hibernate` call.
+power_sleep_conf: /etc/systemd/sleep.conf.d/50-workstation.conf
+
+# The file `hardening` writes the kernel command line to. This role only READS
+# it, to prove the `resume=` declaration is there (the same pattern `plymouth`
+# uses for `splash`).
+power_grub_default: /etc/default/grub

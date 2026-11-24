@@ -1,0 +1,45 @@
+---
+argument_specs:
+  main:
+    short_description: The power policy, hibernation disabled by default.
+    description:
+      - >-
+        Declares systemd's sleep policy, masks the hibernation targets by
+        default and reads the effective verb back from logind. `enabled` is the
+        site's explicit decision: it requires the resume device, writes the
+        initramfs resume file and refuses a host whose running kernel was not
+        booted with `resume=`. The role never creates, converts, formats or
+        encrypts a swap, and never writes GRUB: `hardening` owns the kernel
+        command line.
+    author: Younes BENMOUSSA
+    options:
+      power_hibernation:
+        type: str
+        required: false
+        description: >-
+          `disabled` (default) refuses hibernation in the sleep configuration
+          and masks `hibernate.target` and `hybrid-sleep.target`; `enabled` is
+          the site's explicit acceptance of the unencrypted-swap risk and
+          requires `power_resume_device`.
+        choices: [enabled, disabled]
+      power_resume_device:
+        type: str
+        required: false
+        description: >-
+          The swap device the kernel resumes from (`UUID=...` or a stable
+          path), required when `power_hibernation` is `enabled`. It is site
+          data and has no default. It must also be declared as
+          `resume=<device>` in `hardening_kernel_cmdline`.
+      power_sleep_conf:
+        type: str
+        required: false
+        description: >-
+          The systemd sleep drop-in the role writes; the effective verb is read
+          back from logind, not from the file. It must be an absolute path
+          without `..`.
+      power_grub_default:
+        type: str
+        required: false
+        description: >-
+          The file `hardening` writes the kernel command line to; this role only
+          reads it to prove the `resume=` declaration is there.

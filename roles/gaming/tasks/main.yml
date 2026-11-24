@@ -160,8 +160,9 @@
               # SPDX-License-Identifier: AGPL-3.0-or-later
               #
               # Steam's pressure-vessel sandbox needs unprivileged user
-              # namespaces. 60-hardening.conf disables them; this file loads
-              # after it and re-enables them on this opt-in gaming host.
+              # namespaces. 60-hardening.conf declares them (1 by default);
+              # this file loads after it and keeps them at 1 on this opt-in
+              # host even when a site sets the hardening to 0.
               kernel.unprivileged_userns_clone = 1
             dest: "{{ gaming_userns_sysctl }}"
             owner: root

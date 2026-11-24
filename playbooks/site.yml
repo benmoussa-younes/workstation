@@ -89,6 +89,14 @@
     - role: performance
       tags: [performance]
 
+    # The power policy: hibernation is disabled by default, because a hibernation
+    # image is the whole memory written to a swap this product does not encrypt.
+    # The role masks the hibernation targets and proves logind refuses the verb;
+    # `enabled` is the site's explicit decision and needs a declared resume
+    # device, while the kernel line stays `hardening`'s.
+    - role: power
+      tags: [power]
+
     # The link's owner: NetworkManager, and no systemd-networkd beside it. On a
     # Wi-Fi site that already handed the radio over by hand, the inventory says
     # `network_profile_managed: false`; the role then verifies and never writes
@@ -212,6 +220,34 @@
     # Avahi retirement in `post_tasks`, UNREACHABLE on the rebooting host).
     - name: The handlers queued by the converge run before the reboot
       ansible.builtin.meta: flush_handlers
+
+    # Unprivileged user namespaces have two writers: `hardening` declares the
+    # value, and `gaming` keeps them at 1 for Steam's pressure-vessel sandbox.
+    # Only the play knows which one wins, so the FINAL value is proved here,
+    # after every handler ran -- the hardening role cannot assert a value that
+    # a later role changes.
+    - name: The final unprivileged user namespace value is read
+      ansible.builtin.command:  # noqa: command-instead-of-module
+        cmd: /usr/sbin/sysctl -n kernel.unprivileged_userns_clone
+      register: workstation_userns_clone
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: The unprivileged user namespace value is the one the roles declare
+      ansible.builtin.assert:
+        that:
+          - >-
+            (workstation_userns_clone.stdout | trim)
+            == ((1 if (gaming_enabled | default(false) | bool)
+                 else (hardening_unprivileged_userns_clone | int)) | string)
+        fail_msg: >-
+          {{ inventory_hostname }} runs
+          kernel.unprivileged_userns_clone={{ workstation_userns_clone.stdout | trim }},
+          not {{ (1 if (gaming_enabled | default(false) | bool)
+                  else (hardening_unprivileged_userns_clone | int)) }}.
+          `gaming_enabled` keeps it at 1 for Steam; a later file, including
+          `/etc/sysctl.conf`, can also override the declared value.
+      when: not ansible_check_mode
 
     - name: The machine reboots into the declared network
       # `async` + `poll: 0`: the reboot ends the SSH session this task runs on,
