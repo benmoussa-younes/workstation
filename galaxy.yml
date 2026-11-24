@@ -3,7 +3,7 @@
 # mismatch, and the release workflow checks it against the pushed tag.
 namespace: benmoussa
 name: workstation
-version: "0.4.1"
+version: "0.4.0"
 readme: README.md
 authors:
   - Younes BENMOUSSA <younes.benmoussa@pm.me>

@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.4.1-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.4.1)
+[![Release](https://img.shields.io/badge/release-0.4.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.4.0)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -85,10 +85,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.4.1.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.4.0.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.4.1-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.4.0-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -162,7 +162,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `time` | Exactly one time daemon and the declared zone. |
 | `gnome` | Debian's `gnome-core` and desktop task, and a Wayland session. |
 | `desktop` | The account's desktop groups, locale and Bluetooth daemon. |
-| `dconf` | The profile-wide GNOME policy: appearance, wallpaper, screen lock, privacy, an empty and locked extension set, favorites and the six application-grid folders. |
+| `dconf` | The profile-wide GNOME policy: appearance, wallpaper, screen lock, privacy, an empty and locked extension set, favorites and the six application-grid folders. The screen blank delay is the account's (15 minutes default); choosing Never disables the idle blank and lock, while the screen lock and suspend keys stay locked. |
 | `applications` | The declared Debian applications (including VLC, default for video/audio MIME), GNOME Secrets and Mozilla Firefox. |
 | `developer` | The declared developer tool groups through `developer_tools`, Debian packages, the .NET 10 SDK from Microsoft's pinned repository, the opt-in VSCodium from its pinned repository and the latest Scripts interpreter from its public GitHub release. No editor by default, no dotfile or service. |
 | `coding_agents` | Opt-in OpenCode for the human account (`coding_agents_opencode_enabled`, with `*_version` and `*_install_sha256`): the vendor's installer, pinned by version and SHA-256, the machine-wide `/etc/opencode/opencode.json` and the PATH drop-in. No model, provider or credential is declared. |
@@ -252,7 +252,7 @@ workstation keeps the firewall, SSH, account and desktop policy. The `virbr*`
 and `libvirt_nat` rules, the `virt-manager` favorite and `qemu-guest-agent` were
 removed with the role.
 
-`0.4.1` is the current release. Debian amd64 is the only supported base; a newer
+`0.4.0` is the current release. Debian amd64 is the only supported base; a newer
 Debian release is added when the product declares it. The product is maintained
 by one author; there is no support contract, service level or warranty, express
 or implied (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md)).

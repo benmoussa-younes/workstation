@@ -32,7 +32,7 @@ files.
 
 ## Repository facts
 
-- The collection is `benmoussa.workstation`, version `0.4.1`.
+- The collection is `benmoussa.workstation`, version `0.4.0`.
 - The product code is `AGPL-3.0-or-later`; the documentation is
   `CC-BY-SA-4.0`; the Plymouth theme is `GPL-2.0-or-later`.
 - A release is a signed tag `v<version>` and three assets: the collection

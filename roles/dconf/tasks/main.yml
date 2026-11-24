@@ -25,6 +25,82 @@
     - "{{ dconf_db_dir }}"
     - "{{ dconf_locks_dir }}"
 
+# The two guards run BEFORE anything is written. A failure here changes no file,
+# so the handler is not lost: the operator moves the offending file out and the
+# next run writes and notifies again. A guard placed after the writes would stop
+# the play with the files already rewritten and the handler unrun; the next run
+# would see no change, never notify, and the COMPILED database would keep the old
+# policy (measured on a local probe, 2026-11-24).
+#
+# `locks/` is read as a whole: a lock file a previous layout left (the old
+# edition's `01-bitcrafts-lock`, measured on `desktop`) can lock a key this role
+# leaves to the account even when the declared file does not.
+- name: Whether the lock directory exists is known
+  ansible.builtin.stat:
+    path: "{{ dconf_locks_dir }}"
+  register: dconf_locks_dir_state
+
+- name: The lock files already present are listed
+  ansible.builtin.find:
+    paths: "{{ dconf_locks_dir }}"
+    file_type: any
+    hidden: true
+    recurse: false
+  register: dconf_existing_locks
+  when: dconf_locks_dir_state.stat.isdir | default(false)
+
+- name: The lock directory holds only the declared locks
+  ansible.builtin.assert:
+    that:
+      - >-
+        dconf_existing_locks.files | default([]) | map(attribute='path') | map('basename')
+        | difference(dconf_locks | dict2items | map(attribute='key') | list) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: a lock file this product does not declare is in
+      {{ dconf_locks_dir }}:
+      {{ dconf_existing_locks.files | default([]) | map(attribute='path') | map('basename')
+         | difference(dconf_locks | dict2items | map(attribute='key') | list) }}.
+      dconf reads every file in `locks/`, so a leftover can lock a key this role
+      leaves to the account. Move it out of the directory, then converge again.
+  when: dconf_locks_dir_state.stat.isdir | default(false)
+
+# Every file in `local.d` is compiled into the database, whatever its name, and
+# they are read in name order: a keyfile a previous layout wrote (the reference workstation's
+# `00-workstation`) sorts AFTER `00-workstation` and would decide the keys this role
+# believes it owns -- while the read-back below reported a value nobody declared.
+# The role therefore refuses to converge over a policy it does not own, and names
+# the files. Removing them is the operator's call: a left-over file may hold a
+# site's value, which this product will not silently discard.
+- name: The dconf database directory is known
+  ansible.builtin.stat:
+    path: "{{ dconf_db_dir }}"
+  register: dconf_db_dir_state
+
+- name: The keyfiles already in the database are listed
+  ansible.builtin.find:
+    paths: "{{ dconf_db_dir }}"
+    file_type: file
+    hidden: true
+    recurse: false
+  register: dconf_existing_keyfiles
+  when: dconf_db_dir_state.stat.isdir | default(false)
+
+- name: The dconf database holds only the declared policy
+  ansible.builtin.assert:
+    that:
+      - >-
+        dconf_existing_keyfiles.files | default([]) | map(attribute='path') | map('basename')
+        | difference(dconf_keyfiles | map(attribute='dest') | list) | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }}: a keyfile this product does not declare is in
+      {{ dconf_db_dir }}:
+      {{ dconf_existing_keyfiles.files | default([]) | map(attribute='path') | map('basename')
+         | difference(dconf_keyfiles | map(attribute='dest') | list) }}.
+      dconf compiles EVERY file in that directory, in name order, so a leftover
+      decides keys this role believes it owns. Move it out of the directory
+      (it is still read by `dconf update` until you do), then converge again.
+  when: dconf_db_dir_state.stat.isdir | default(false)
+
 # Without this file the session only reads the account's own database: the
 # system-wide defaults and every lock would be ignored, silently.
 - name: The dconf profile is declared
@@ -65,41 +141,6 @@
   loop_control:
     label: "{{ item.key }}"
   notify: Update the dconf database
-
-# Every file in `local.d` is compiled into the database, whatever its name, and
-# they are read in name order: a keyfile a previous layout wrote (the reference workstation's
-# `00-workstation`) sorts AFTER `00-workstation` and would decide the keys this role
-# believes it owns -- while the read-back below reported a value nobody declared.
-# The role therefore refuses to converge over a policy it does not own, and names
-# the files. Removing them is the operator's call: a left-over file may hold a
-# site's value, which this product will not silently discard.
-- name: The dconf database directory is known
-  ansible.builtin.stat:
-    path: "{{ dconf_db_dir }}"
-  register: dconf_db_dir_state
-
-- name: The keyfiles already in the database are listed
-  ansible.builtin.find:
-    paths: "{{ dconf_db_dir }}"
-    file_type: file
-    recurse: false
-  register: dconf_existing_keyfiles
-  when: dconf_db_dir_state.stat.isdir | default(false)
-
-- name: The dconf database holds only the declared policy
-  ansible.builtin.assert:
-    that:
-      - >-
-        dconf_existing_keyfiles.files | default([]) | map(attribute='path') | map('basename')
-        | difference(dconf_keyfiles | map(attribute='dest') | list) | length == 0
-    fail_msg: >-
-      {{ inventory_hostname }}: a keyfile this product does not declare is in
-      {{ dconf_db_dir }}:
-      {{ dconf_existing_keyfiles.files | default([]) | map(attribute='path') | map('basename')
-         | difference(dconf_keyfiles | map(attribute='dest') | list) }}.
-      dconf compiles EVERY file in that directory, in name order, so a leftover
-      decides keys this role believes it owns. Move it out of the directory
-      (it is still read by `dconf update` until you do), then converge again.
 
 # The key names a path the `branding` role installs. A session pointed at a
 # missing file shows a plain colour, which looks like a theme, not like a fault.
@@ -158,6 +199,28 @@
     owner: root
     group: root
     mode: "0644"
+  when: not ansible_check_mode
+
+# The value read-back below proves the compiled DEFAULT; it cannot prove the key
+# is writable, because `dconf read` returns the same value whether the key is
+# locked or not. The rendered lock file is the lock's own proof, and it is read
+# after the handler so a failure here has not lost the compilation.
+- name: The rendered screen-policy lock file is read
+  ansible.builtin.slurp:
+    src: "{{ dconf_locks_dir }}/01-workstation-lock"
+  register: dconf_screen_lock_file
+  when: not ansible_check_mode
+
+- name: The idle delay is not locked
+  ansible.builtin.assert:
+    that:
+      - >-
+        '/org/gnome/desktop/session/idle-delay'
+        not in (dconf_screen_lock_file.content | b64decode)
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ dconf_locks_dir }}/01-workstation-lock` still
+      locks `/org/gnome/desktop/session/idle-delay`; the account cannot change
+      the screen blank delay.
   when: not ansible_check_mode
 
 - name: The declared values are read from the profile the session uses
