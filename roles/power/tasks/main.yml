@@ -14,13 +14,15 @@
 
 - name: The sleep drop-in path is absolute
   # The parent directory task below runs as root: a relative value would make it
-  # manage the remote working directory as a directory.
+  # manage the remote working directory as a directory, and `..` could make it
+  # manage `/`.
   ansible.builtin.assert:
     that:
       - power_sleep_conf is match('^/')
+      - power_sleep_conf is not search('\.\.(/|$)')
     fail_msg: >-
-      {{ inventory_hostname }}: power_sleep_conf must be an absolute path, not
-      `{{ power_sleep_conf }}`.
+      {{ inventory_hostname }}: power_sleep_conf must be an absolute path
+      without `..`, not `{{ power_sleep_conf }}`.
 
 # The preconditions of `enabled` are read BEFORE anything is written: a host
 # whose running kernel was not booted with `resume=` is left untouched, and the
@@ -31,7 +33,9 @@
   # backtick or a quote is refused here instead of reaching the boot.
   ansible.builtin.assert:
     that:
-      - power_resume_device is match('^(UUID=[0-9A-Fa-f-]+|/dev/[A-Za-z0-9._/-]+)$')
+      - >-
+        power_resume_device
+        is match('^(UUID=[0-9A-Fa-f-]+|/dev/[A-Za-z0-9._/-]+)\Z')
     fail_msg: >-
       {{ inventory_hostname }}: power_hibernation is `enabled` and
       power_resume_device is empty or not a swap device (`UUID=...` or
@@ -62,8 +66,8 @@
 - name: The kernel line declares the resume device
   # The quotes are replaced by spaces before the split: `update-grub` writes the
   # last option against the closing quote, and that quote is not part of the
-  # option. `hardening` writes a single `GRUB_CMDLINE_LINUX_DEFAULT` line, so a
-  # comment line cannot carry the token.
+  # option. The whole file is searched, so a commented `resume=` would match
+  # too; the `/proc/cmdline` assert below is the effective check.
   ansible.builtin.assert:
     that:
       - >-
@@ -179,12 +183,15 @@
 - name: The hibernation targets are in the state the policy declares
   # `masked-runtime` is a mask too (it disappears at the next boot): the enabled
   # read-back rejects it, or a runtime mask would survive `systemctl unmask`.
+  # The exit code is checked as well: an empty answer must not pass the
+  # `not in` test.
   ansible.builtin.assert:
     that:
       - >-
         (power_hibernation == 'disabled'
          and (item.stdout | trim) in ['masked', 'masked-runtime'])
         or (power_hibernation == 'enabled'
+            and (item.rc | int) == 0
             and (item.stdout | trim) not in ['masked', 'masked-runtime'])
     fail_msg: >-
       {{ inventory_hostname }}: {{ item.item }} answers
