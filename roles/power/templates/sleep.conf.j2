@@ -7,12 +7,16 @@
 # needed.
 #
 # `AllowHibernation` gates hibernation itself; `AllowHybridSleep` gates hybrid
-# sleep, which writes the same memory image to the swap before suspending.
+# sleep, and `AllowSuspendThenHibernate` gates the suspend-then-hibernate verb.
+# All three write the same memory image to the swap, so the policy follows one
+# switch.
 [Sleep]
 {% if power_hibernation == 'enabled' %}
 AllowHibernation=yes
 AllowHybridSleep=yes
+AllowSuspendThenHibernate=yes
 {% else %}
 AllowHibernation=no
 AllowHybridSleep=no
+AllowSuspendThenHibernate=no
 {% endif %}

@@ -6,6 +6,57 @@
 # /etc/nftables.conf, which this product never writes. Replace only our own
 # table, atomically: a `flush ruleset` here would wipe Docker's chains whenever
 # this file is loaded — the very conflict this design exists to avoid.
+#
+# The sources are split by family. `ip saddr` refuses an IPv6 address and the
+# whole ruleset fails its `nft -c`; a site that declares an IPv6 network gets
+# its own `ip6 saddr` rule, and a port with both families gets both rules.
+{% macro port_rule(rule, sources) -%}
+{%     set sources = sources | default([]) %}
+{%     set v4 = sources | reject('search', ':') | list %}
+{%     set v6 = sources | select('search', ':') | list %}
+{%     if sources | length == 0 %}
+        {{ rule }} accept
+{%     else %}
+{%         if v4 | length > 0 %}
+        {{ rule }} ip saddr { {{ v4 | join(', ') }} } accept
+{%         endif %}
+{%         if v6 | length > 0 %}
+        {{ rule }} ip6 saddr { {{ v6 | join(', ') }} } accept
+{%         endif %}
+{%     endif %}
+{%- endmacro %}
+{% macro protocol_rule(protocol, sources) -%}
+{%     set sources = sources | default([]) %}
+{%     set v4 = sources | reject('search', ':') | list %}
+{%     set v6 = sources | select('search', ':') | list %}
+{%     if sources | length == 0 %}
+        ip protocol {{ protocol }} accept
+        ip6 nexthdr {{ protocol }} accept
+{%     else %}
+{%         if v4 | length > 0 %}
+        ip protocol {{ protocol }} ip saddr { {{ v4 | join(', ') }} } accept
+{%         endif %}
+{%         if v6 | length > 0 %}
+        ip6 nexthdr {{ protocol }} ip6 saddr { {{ v6 | join(', ') }} } accept
+{%         endif %}
+{%     endif %}
+{%- endmacro %}
+{% macro forward_rule(flow) -%}
+{%     set sources = flow.sources | default([]) %}
+{%     set v4 = sources | reject('search', ':') | list %}
+{%     set v6 = sources | select('search', ':') | list %}
+{%     if sources | length == 0 %}
+        iif {{ flow.iif }} oif {{ flow.oif }} accept
+{%     else %}
+{%         if v4 | length > 0 %}
+        iif {{ flow.iif }} oif {{ flow.oif }} ip saddr { {{ v4 | join(', ') }} } accept
+{%         endif %}
+{%         if v6 | length > 0 %}
+        iif {{ flow.iif }} oif {{ flow.oif }} ip6 saddr { {{ v6 | join(', ') }} } accept
+{%         endif %}
+{%     endif %}
+{%- endmacro %}
+
 table inet {{ security_firewall_table }} {}
 delete table inet {{ security_firewall_table }}
 
@@ -39,16 +90,16 @@ table inet {{ security_firewall_table }} {
         # The sources follow the site's SSH sources; a site that refuses sets
         # `security_mdns_enabled: false` and loses the discovery.
 {% if security_mdns_enabled %}
-        udp dport 5353{% if security_mdns_sources %} ip saddr { {{ security_mdns_sources | join(', ') }} }{% endif %} accept
+{{ port_rule('udp dport 5353', security_mdns_sources) }}
 {% endif %}
 
         # SSH, from the declared sources when any are named.
-        tcp dport {{ security_ssh_port }}{% if security_ssh_sources %} ip saddr { {{ security_ssh_sources | join(', ') }} }{% endif %} accept
+{{ port_rule('tcp dport ' ~ security_ssh_port, security_ssh_sources) }}
 {% for service in security_extra_services %}
-        {{ service.proto | default('tcp') }} dport {{ service.port }}{% if service.sources is defined and service.sources %} ip saddr { {{ service.sources | join(', ') }} }{% endif %} accept
+{{ port_rule(service.proto | default('tcp') ~ ' dport ' ~ service.port, service.sources | default([])) }}
 {% endfor %}
 {% for proto_rule in security_extra_protocols %}
-        ip protocol {{ proto_rule.protocol }}{% if proto_rule.sources is defined and proto_rule.sources %} ip saddr { {{ proto_rule.sources | join(', ') }} }{% endif %} accept
+{{ protocol_rule(proto_rule.protocol, proto_rule.sources | default([])) }}
 {% endfor %}
         # The counter the policy cannot give (see the comment above the chain).
         counter drop
@@ -71,11 +122,10 @@ table inet {{ security_firewall_table }} {
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
 {% for flow in security_forward_flows %}
-        iif {{ flow.iif }} oif {{ flow.oif }}{% if flow.sources is defined and flow.sources %} ip saddr { {{ flow.sources | join(', ') }} }{% endif %} accept
+{{ forward_rule(flow) }}
 {% endfor %}
 {% if security_forward_policy == 'drop' %}
         counter drop
 {% endif %}
     }
 }
-

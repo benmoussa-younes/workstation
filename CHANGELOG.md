@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-24
+
+### Changed
+
+- The firewall accepts IPv6 sources: SSH, mDNS, the extra services and the
+  forward flows render `ip6 saddr` (or `ip6 nexthdr`) when the site declares an
+  IPv6 CIDR; `ip saddr` alone rejected the ruleset. A port or protocol without
+  sources is opened on both families, as a port already was.
+- The Avahi and mDNS switches are asserted together at the end of the play: a
+  site that disables one without the other fails instead of opening 5353 with
+  no responder, or running a daemon no packet reaches.
+- `power` covers `suspend-then-hibernate`: the sleep drop-in sets
+  `AllowSuspendThenHibernate` with the same switch, the target is masked and
+  read back, and logind's answer is checked in `disabled` mode.
+- `power` replays a failed initramfs rebuild: a marker records the device the
+  image was built for, and the role asks for the handler again when the marker
+  disagrees.
+- A switch back to `disabled` removes the role's OWN resume file (the SPDX one)
+  and rebuilds the image; the installer's file stays.
+- `power_grub_default` follows `hardening_grub_default`, and the gaming userns
+  drop-in path follows `gaming_userns_sysctl`.
+- `performance_observe_packages`' description no longer carries a stray
+  `- ethtool`; the identity comment no longer cites `0.1.0`; the README's
+  `Project status` states the current release and the known limits.
+
 ## [0.4.1] - 2026-11-24
 
 ### Added
@@ -292,5 +317,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Wi-Fi keyfile is root-only and the interface is owned by NetworkManager.
 - The session is Wayland-only, with GDM's policy in a drop-in.
 
-[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.4.2...HEAD
 [0.1.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0

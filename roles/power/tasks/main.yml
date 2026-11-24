@@ -12,7 +12,7 @@
       - ansible_facts.service_mgr == 'systemd'
     fail_msg: "{{ inventory_hostname }} does not use systemd."
 
-- name: The sleep drop-in path is absolute
+- name: The power paths are absolute
   # The parent directory task below runs as root: a relative value would make it
   # manage the remote working directory as a directory, and `..` could make it
   # manage `/`.
@@ -20,9 +20,12 @@
     that:
       - power_sleep_conf is match('^/')
       - power_sleep_conf is not search('\.\.(/|$)')
+      - power_initramfs_marker is match('^/')
+      - power_initramfs_marker is not search('\.\.(/|$)')
     fail_msg: >-
-      {{ inventory_hostname }}: power_sleep_conf must be an absolute path
-      without `..`, not `{{ power_sleep_conf }}`.
+      {{ inventory_hostname }}: power_sleep_conf and power_initramfs_marker must
+      be absolute paths without `..`, not `{{ power_sleep_conf }}` and
+      `{{ power_initramfs_marker }}`.
 
 # The preconditions of `enabled` are read BEFORE anything is written: a host
 # whose running kernel was not booted with `resume=` is left untouched, and the
@@ -121,27 +124,88 @@
 # The image is rebuilt BEFORE hibernation is declared: a file on disk that the
 # boot image does not carry is not a resume configuration, and a failed later
 # task must not leave hibernation enabled over the previous image.
+- name: The power state directory exists
+  ansible.builtin.file:
+    path: "{{ power_initramfs_marker | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: power_hibernation == 'enabled'
+
+- name: The initramfs rebuild marker is read
+  ansible.builtin.slurp:
+    src: "{{ power_initramfs_marker }}"
+  register: power_marker_read
+  failed_when: false
+  when:
+    - power_hibernation == 'enabled'
+    - not ansible_check_mode
+
+- name: The initramfs rebuild is requested when its marker disagrees
+  # The resume template only notifies on a CHANGE; a failed `update-initramfs`
+  # leaves the template unchanged and the marker stale, so the rebuild would
+  # never be retried. This kick asks for the handler whenever the marker does
+  # not name the declared device.
+  ansible.builtin.command:
+    cmd: /bin/true
+  changed_when: true
+  notify: Rebuild the power initramfs
+  when:
+    - power_hibernation == 'enabled'
+    - not ansible_check_mode
+    - (power_marker_read.content | default('') | b64decode | trim) != power_resume_device
+
 - name: The initramfs resume configuration is declared
-  # A switch back to `disabled` leaves this file in place: it names the device a
-  # hibernation WOULD resume from, and no hibernation image is written while the
-  # policy is disabled. The role does not remove a file the installer may own.
+  # A switch back to `disabled` removes the role's OWN file (recognised by its
+  # SPDX header, see below) and rebuilds the image; a file the installer wrote
+  # stays, and the kernel line remains the site's.
   ansible.builtin.template:
     src: resume.j2
     dest: /etc/initramfs-tools/conf.d/resume
     owner: root
     group: root
     mode: "0644"
-  notify: Rebuild the initramfs
+  notify: Rebuild the power initramfs
   when: power_hibernation == 'enabled'
 
 - name: The initramfs is rebuilt before hibernation is declared
   # `meta: flush_handlers` runs a notified handler now instead of at the end of
-  # the play, where a later failure would lose it: on the next run the template
-  # is unchanged, nothing notifies it again, and the image would never be
-  # rebuilt. The guard keeps the default mode from reordering other roles'
-  # pending handlers.
+  # the play, where a later failure would lose it: on the next run the resume
+  # template is unchanged, the marker is read, and the kick asks for the
+  # rebuild again. The guard keeps the default mode from reordering other
+  # roles' pending handlers.
   ansible.builtin.meta: flush_handlers
   when: power_hibernation == 'enabled'
+
+- name: The role's resume configuration is read when hibernation is disabled
+  ansible.builtin.slurp:
+    src: /etc/initramfs-tools/conf.d/resume
+  register: power_resume_read
+  failed_when: false
+  when:
+    - power_hibernation == 'disabled'
+    - not ansible_check_mode
+
+- name: The role's own resume configuration is removed when hibernation is disabled
+  # The installer's file carries no SPDX header and stays; the role's own file
+  # is removed and the image rebuilt, so a re-enabled site does not resume from
+  # a stale image.
+  ansible.builtin.file:
+    path: /etc/initramfs-tools/conf.d/resume
+    state: absent
+  notify: Rebuild the power initramfs
+  when:
+    - power_hibernation == 'disabled'
+    - not ansible_check_mode
+    - "'SPDX-License-Identifier: AGPL-3.0-or-later' in (power_resume_read.content | default('') | b64decode)"
+
+- name: The initramfs is rebuilt before the policy is read back
+  # The disabled removal notifies the rebuild; flushing it here means a later
+  # failure (the sleep template, the logind read-back) cannot lose it, and the
+  # next run sees the file already gone.
+  ansible.builtin.meta: flush_handlers
+  when: power_hibernation == 'disabled'
 
 - name: The sleep policy is declared
   ansible.builtin.template:
@@ -158,6 +222,7 @@
   loop:
     - hibernate.target
     - hybrid-sleep.target
+    - suspend-then-hibernate.target
   when: power_hibernation == 'disabled'
 
 - name: The hibernation targets are unmasked when the site enables hibernation
@@ -167,6 +232,7 @@
   loop:
     - hibernate.target
     - hybrid-sleep.target
+    - suspend-then-hibernate.target
   when: power_hibernation == 'enabled'
 
 - name: The hibernation targets are read back
@@ -175,6 +241,7 @@
   loop:
     - hibernate.target
     - hybrid-sleep.target
+    - suspend-then-hibernate.target
   register: power_target_states
   changed_when: false
   failed_when: false
@@ -235,6 +302,28 @@
       In `enabled` mode `na` means logind finds no usable swap or resume device
       for the declared `power_resume_device`.
   when: not ansible_check_mode
+
+- name: The suspend-then-hibernate verb logind offers is read
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    cmd: >-
+      busctl call org.freedesktop.login1 /org/freedesktop/login1
+      org.freedesktop.login1.Manager CanSuspendThenHibernate
+  register: power_can_suspend_then_hibernate
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Logind does not offer suspend-then-hibernate when the policy disables it
+  ansible.builtin.assert:
+    that:
+      - (power_can_suspend_then_hibernate.stdout | trim) in ['s "no"', 's "na"']
+    fail_msg: >-
+      {{ inventory_hostname }}: logind answers
+      `{{ power_can_suspend_then_hibernate.stdout | trim }}` for
+      CanSuspendThenHibernate while `power_hibernation: disabled`. A drop-in
+      numbered higher than `{{ power_sleep_conf }}` can re-enable it.
+  when:
+    - not ansible_check_mode
+    - power_hibernation == 'disabled'
 
 # The assert above requires `no`, so this probe cannot hibernate the machine:
 # `Manager.Hibernate` re-runs the same sleep-config check and answers "disabled

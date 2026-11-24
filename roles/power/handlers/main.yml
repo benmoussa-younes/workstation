@@ -2,8 +2,37 @@
 # `update-initramfs -u` copies `/etc/initramfs-tools/conf.d/resume` into the
 # boot image. Without the rebuild the file on disk is right and the image that
 # boots still resumes from the previous device.
-- name: Rebuild the initramfs
+#
+# The three tasks LISTEN to the same topic: a `notify: Rebuild the power initramfs`
+# runs all of them, in order. Separate handlers would never be notified.
+- name: Rebuild the power initramfs
   ansible.builtin.command:
     cmd: /usr/sbin/update-initramfs -u
   changed_when: true
   when: not ansible_check_mode
+  listen: Rebuild the power initramfs
+
+# The marker is written AFTER the rebuild. It records which device the current
+# image was built for, so a failed `update-initramfs` is replayed on the next
+# run even though the resume template itself no longer changes.
+- name: The initramfs marker records the resumed device
+  ansible.builtin.copy:
+    content: "{{ power_resume_device }}\n"
+    dest: "{{ power_initramfs_marker }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - not ansible_check_mode
+    - power_hibernation == 'enabled'
+    - power_resume_device | length > 0
+  listen: Rebuild the power initramfs
+
+- name: The initramfs marker is removed when hibernation is disabled
+  ansible.builtin.file:
+    path: "{{ power_initramfs_marker }}"
+    state: absent
+  when:
+    - not ansible_check_mode
+    - power_hibernation == 'disabled'
+  listen: Rebuild the power initramfs

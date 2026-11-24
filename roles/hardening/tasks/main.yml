@@ -44,16 +44,15 @@
   # role owns BOTH `50-performance.conf` (vm.*) and
   # `51-performance-network.conf` (net.*): the network tuning is a performance
   # declaration, not a hardening one, and the split keeps the security file
-  # owning its own namespace. The opt-in `gaming` role owns
-  # `61-gaming-userns.conf`: without it here, this role renamed the file the
-  # gaming role had just written, and every converge reported the pair as a
-  # change (measured on the desktop site, 2026-11-11).
+  # owning its own namespace. The opt-in `gaming` role owns the userns drop-in;
+  # its path follows `gaming_userns_sysctl`, so a site that moves it does not
+  # see this role rename the file on every converge.
   ansible.builtin.set_fact:
     hardening_sysctl_declared: >-
       {{ [hardening_sysctl_file,
           (hardening_sysctl_file | dirname) ~ '/50-performance.conf',
           (hardening_sysctl_file | dirname) ~ '/51-performance-network.conf',
-          (hardening_sysctl_file | dirname) ~ '/61-gaming-userns.conf']
+          gaming_userns_sysctl | default('/etc/sysctl.d/61-gaming-userns.conf')]
          + hardening_sysctl_kept }}
 
 # Only a file NO PACKAGE owns is retired: a distribution drop-in is not this

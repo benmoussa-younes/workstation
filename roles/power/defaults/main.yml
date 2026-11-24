@@ -22,19 +22,29 @@ power_hibernation: disabled
 # `hardening_kernel_cmdline`: this role reads the line, it never writes GRUB.
 #
 # A site that switches back to `disabled` removes `resume=` from its own
-# `hardening_kernel_cmdline` and discards any hibernation image it holds: this
-# role cannot edit GRUB and never touches the swap.
+# `hardening_kernel_cmdline` and discards any hibernation image it holds. The
+# role removes its OWN `/etc/initramfs-tools/conf.d/resume` (recognised by its
+# SPDX header) and rebuilds the image; a file the installer wrote stays.
 power_resume_device: ""
+
+# The marker that records the device the current initramfs was rebuilt for. The
+# role reads it before rebuilding: a resume template left unchanged after a
+# failed `update-initramfs` would otherwise never notify the handler again. It
+# lives in the role's own state directory, not in `/var/lib/workstation`, which
+# the `security` role owns.
+power_initramfs_marker: /var/lib/power/initramfs-resume
 
 # The sleep drop-in. systemd parses the drop-ins sorted by file name across all
 # config directories: `50-` wins against a distribution file numbered lower, and
 # a later file (a site's, or a distribution's numbered higher) overrides it. The
-# read-back below catches an override of hibernation or hybrid sleep instead of
-# letting it win silently; `AllowSuspendThenHibernate` is a separate verb, and
-# its hibernate step still goes through the refused `Hibernate` call.
+# read-back below catches an override of hibernation; in `disabled` mode the
+# suspend-then-hibernate verb is checked too, and the three targets are read
+# back masked. A hybrid-sleep override is caught by the masked
+# `hybrid-sleep.target`: `CanHibernate` is the hibernation verb, not the hybrid.
 power_sleep_conf: /etc/systemd/sleep.conf.d/50-workstation.conf
 
 # The file `hardening` writes the kernel command line to. This role only READS
 # it, to prove the `resume=` declaration is there (the same pattern `plymouth`
-# uses for `splash`).
-power_grub_default: /etc/default/grub
+# uses for `splash`). It follows `hardening_grub_default` so a site that moves
+# the file keeps both roles on the same path.
+power_grub_default: "{{ hardening_grub_default | default('/etc/default/grub') }}"

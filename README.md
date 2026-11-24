@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.4.1-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.4.1)
+[![Release](https://img.shields.io/badge/release-0.4.2-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.4.2)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -48,9 +48,10 @@ ships.
   which keeps them at 1 for Steam.
 - **No hibernation by default**: a hibernation image is the whole memory
   written to swap, and the product does not encrypt the swap. `power` masks the
-  hibernation targets and proves logind refuses the verb; a site that accepts
-  the risk sets `power_hibernation: enabled` with `power_resume_device` and
-  declares `resume=` in `hardening_kernel_cmdline`.
+  hibernation, hybrid-sleep and suspend-then-hibernate targets and proves logind
+  refuses the verb; a site that accepts the risk sets `power_hibernation:
+  enabled` with `power_resume_device` and declares `resume=` in
+  `hardening_kernel_cmdline`.
 - **Provable by construction**: every role reads its own change back, a second
   converge must print `changed=0`, and a declared address is proved by the boot
   that uses it.
@@ -86,10 +87,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.4.1.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.4.2.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.4.1-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.4.2-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -157,7 +158,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `keyboard` | The console keyboard and GRUB's copy. |
 | `hardening` | The kernel and system policy, `graphical.target`, `splash` and the reboot policy. Unprivileged user namespaces are enabled for GNOME's default applications (Loupe/glycin, Flatpak-based applications); a site closes them with `hardening_unprivileged_userns_clone`, except `gaming_enabled: true`, which keeps them at 1 for Steam. |
 | `performance` | The declared VM, I/O and TCP tuning, THP, the CPU governor and the D-Bus provider (`dbus-broker` by default, `dbus-daemon` as the rollback). |
-| `power` | Hibernation disabled by default: the sleep drop-in, the masked hibernation targets and the logind read-back. `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file and refuses a host whose running kernel was not booted with `resume=`. |
+| `power` | Hibernation, hybrid sleep and suspend-then-hibernate disabled by default: the sleep drop-in, the masked targets and the logind read-back. `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file, replays a failed rebuild and refuses a host whose running kernel was not booted with `resume=`. |
 | `network` | NetworkManager owns the link; a Wi-Fi site that handed it over itself is verified, not overwritten. The Wi-Fi key is stored derived from the passphrase, never in clear. |
 | `resolver` | The stub resolver, fed by the link or by a declared filtering resolver. |
 | `time` | Exactly one time daemon and the declared zone. |
@@ -174,7 +175,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `display` | GDM, `WaylandEnable` in `daemon.conf`, the greeter's logo key and the seat read back. |
 | `plymouth` | The Workstation boot splash, compiled into the initramfs and read back. |
 | `branding` | The wallpaper, GDM's logo and GRUB's image, from this product's own assets. |
-| `security` | The nftables input policy, sshd and the password policy. mDNS 5353 is accepted from the site's sources for the printer discovery. |
+| `security` | The nftables input policy (IPv4 and IPv6 sources), sshd and the password policy. mDNS 5353 is accepted from the site's sources for the printer discovery. |
 
 `roles/README.md` is the catalog with each role's status and key variables.
 
@@ -244,6 +245,18 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 ## Project status
 
+Maintained by one author; the current release is `0.4.2` (Debian amd64, GNOME
+48 on Wayland). Known limits:
+
+- GNOME's About panel reports "Disk capacity: unknown" on an NVMe host whose
+  `UDisksDrive` size is 0 while the block device carries it; `lsblk` and
+  `df -h` show the truth (upstream GNOME/udisks).
+- `power_hibernation: enabled` is implemented and reviewed, but its only proof
+  is a real hibernate and resume at the console; the default `disabled` is
+  proved on the laptop.
+- The end-of-play assertions (user namespaces, the Avahi/mDNS pair) are not
+  tagged: a `--tags` converge skips them.
+
 ## Migration from 0.2.x
 
 `0.3.0` removed the optional `virtualization` role (libvirt, virt-manager and
@@ -253,7 +266,7 @@ workstation keeps the firewall, SSH, account and desktop policy. The `virbr*`
 and `libvirt_nat` rules, the `virt-manager` favorite and `qemu-guest-agent` were
 removed with the role.
 
-`0.4.1` is the current release. Debian amd64 is the only supported base; a newer
+`0.4.2` is the current release. Debian amd64 is the only supported base; a newer
 Debian release is added when the product declares it. The product is maintained
 by one author; there is no support contract, service level or warranty, express
 or implied (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md)).

@@ -12,7 +12,7 @@ a new role is added to this table in the same change that creates it.
 | `keyboard` | The console keyboard, and GRUB's copy of it. | implemented |
 | `hardening` | The server's kernel and system hardening, without the Bluetooth core blacklist; `bnep` stays blacklisted and `rfcomm` is available for HFP/SAP/OBEX. It adds the desktop's kernel line (`splash`) and an optional console shell. The `/tmp` drop-in is derived from fstab, never from the live mount. Unprivileged user namespaces are enabled for GNOME's default applications (Loupe/glycin, Flatpak-based applications); a site closes them with `hardening_unprivileged_userns_clone: 0`, except `gaming_enabled: true`, which keeps them at 1 for Steam. | implemented |
 | `performance` | The server's declared tuning, with `dbus-broker` as the system and user-manager bus provider and `daemon` as the rollback. | implemented |
-| `power` | Hibernation disabled by default: the sleep drop-in, the masked hibernation targets and the logind read-back (a refused `systemctl hibernate`). `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file and refuses a host whose running kernel was not booted with `resume=`. It never creates, converts, formats or encrypts a swap and never writes GRUB. | implemented |
+| `power` | Hibernation, hybrid sleep and suspend-then-hibernate disabled by default: the sleep drop-in, the masked targets and the logind read-back (a refused `systemctl hibernate`). `enabled` is the site's explicit acceptance of the unencrypted-swap risk; it writes the initramfs resume file, replays a failed rebuild, and refuses a host whose running kernel was not booted with `resume=`. It never creates, converts, formats or encrypts a swap and never writes GRUB. | implemented |
 | `network` | The link, owned by NetworkManager: a `systemd-networkd` host is handed over from a detached oneshot; a site-managed Wi-Fi profile is verified, never overwritten. The boot-mode keyfile takes a declared static address and DNS, refuses a reboot with neither resolver, and carries the Wi-Fi key derived from the passphrase. | implemented |
 | `resolver` | The stub resolver, taking the link DNS NetworkManager hands it. | implemented |
 | `time` | Exactly one time daemon, and the declared timezone. | implemented |
@@ -29,7 +29,7 @@ a new role is added to this table in the same change that creates it.
 | `display` | GDM: the unit, `WaylandEnable` in `daemon.conf`, the greeter's logo key, the seat read back. Never a hand-made `display-manager.service` alias. | implemented |
 | `plymouth` | The Workstation boot splash: the theme, its boot/shutdown/reboot messages, its selection and the initramfs, read back. | implemented |
 | `branding` | The wallpaper, GDM's logo and GRUB's image, from this product's own assets. | implemented |
-| `security` | nftables input policy, sshd, the system-wide SSH client drop-in, the password and lockout policy. mDNS 5353 is accepted from the site's sources for the printer discovery. | implemented |
+| `security` | nftables input policy (IPv4 and IPv6 sources for SSH, mDNS and the extra services), sshd, the system-wide SSH client drop-in, the password and lockout policy. mDNS 5353 is accepted from the site's sources for the printer discovery. | implemented |
 
 The `security` role also writes `/etc/ssh/ssh_config.d/99-workstation.conf`. Debian
 includes that directory before its own `Host *` block, and `ssh_config` keeps the

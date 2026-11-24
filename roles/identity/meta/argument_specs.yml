@@ -6,8 +6,9 @@ argument_specs:
       - >-
         Names the product on the machine. The operating system stays Debian,
         but os-release, issue and issue.net carry the product name and its
-        EDITION version (`Workstation Edition 0.1.0`). The static `/etc/motd`
-        is the one-line legal reminder shown under the login dashboard.
+        EDITION version (`Workstation Edition <version>`). The static
+        `/etc/motd` is the one-line legal reminder shown under the login
+        dashboard.
     author: Younes BENMOUSSA
     options:
       identity_product:
@@ -27,8 +28,8 @@ argument_specs:
         required: false
         description: >-
           The EDITION's version, shown to a human (`Workstation
-          Edition 0.1.0`). It is not the distribution's version, which stays in the
-          machine-readable fields a package manager resolves against.
+          Edition <version>`). It is not the distribution's version, which stays
+          in the machine-readable fields a package manager resolves against.
       identity_hostname:
         type: str
         required: false
