@@ -29,7 +29,7 @@ function read_text(root: path, relative: string) -> string {
         ok(content) => {
             return content
         }
-        error(failure) => {
+        error(_failure) => {
             return ""
         }
     }
@@ -61,7 +61,7 @@ function tracked_files(root: path) -> list<string> {
             }
             return []
         }
-        error(failure) => {
+        error(_failure) => {
             return []
         }
     }
@@ -204,7 +204,7 @@ function sha256(root: path, relative: string) -> string {
             }
             return ""
         }
-        error(failure) => {
+        error(_failure) => {
             return ""
         }
     }

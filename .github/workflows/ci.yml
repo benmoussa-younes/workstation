@@ -31,10 +31,10 @@ jobs:
       - name: Install the Scripts interpreter
         run: |
           curl -fsSL -o /tmp/scripts.tar.gz \
-            https://github.com/benmoussa-younes/scripts/releases/download/v0.1.2/scripts_0.1.2_linux-x64.tar.gz
-          echo "db1b23ffa5c3baea6294f9b1f2f36a0d3b8dd9dd8646ffe95dc3dc9c9bb9214f  /tmp/scripts.tar.gz" | sha256sum -c -
+            https://github.com/benmoussa-younes/scripts/releases/download/v0.2.1/scripts_0.2.1_linux-x64.tar.gz
+          echo "f7a56d1eb31b4c8c00d29b74ac9e4db5be8cb4a7d4df5e4ddeafbdb36a197bb1  /tmp/scripts.tar.gz" | sha256sum -c -
           tar -xzf /tmp/scripts.tar.gz -C /tmp
-          sudo install /tmp/scripts-0.1.2/scripts /usr/local/bin/scripts
+          sudo install /tmp/scripts-0.2.1/scripts /usr/local/bin/scripts
           scripts --version
 
       - name: Install Ansible and the linters

@@ -130,7 +130,7 @@ if sign {
         ok(value) => {
             key = value
         }
-        error(failure) => {
+        error(_failure) => {
             stop("RELEASE_GPG_KEY is not set")
         }
     }
