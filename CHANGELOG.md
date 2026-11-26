@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-26
+
+### Changed
+
+- `coding_agents` installs OpenCode at the vendor's latest release on every
+  converge, as the human account, with the vendor installer's
+  `--no-modify-path`. The role compares the installed version before and after
+  the install and reports changed only when it moves, so a second converge with
+  no new release prints `changed=0`. The installer is deliberately unpinned:
+  the product accepts the vendor's latest release without a checksum, by owner
+  decision.
+
+### Removed
+
+- `coding_agents` writes no configuration file and no PATH drop-in: the
+  machine-wide `/etc/opencode/opencode.json`, the
+  `/etc/profile.d/10-opencode.sh` drop-in, `coding_agents_opencode_config` and
+  its path variables are gone. The account owns `~/.config/opencode`, its shell
+  files and its PATH; `/etc/opencode/skills` is never touched. A host where the
+  role is enabled removes the two files the previous release wrote.
+- `coding_agents_opencode_version`, `coding_agents_opencode_install_sha256`,
+  `coding_agents_opencode_reinstall` and the installer cache are removed with
+  the pin.
+
 ## [0.4.2] - 2026-11-24
 
 ### Changed
@@ -317,5 +341,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Wi-Fi keyfile is root-only and the interface is owned by NetworkManager.
 - The session is Wayland-only, with GDM's policy in a drop-in.
 
-[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.0
 [0.1.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0

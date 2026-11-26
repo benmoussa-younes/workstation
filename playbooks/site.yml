@@ -138,8 +138,9 @@
       tags: [developer]
 
     # The coding agents, for the human account: OpenCode from the vendor's
-    # installer, the machine-wide configuration and the PATH drop-in. It runs
-    # after `common` (curl/tar) and after `applications` (the editor).
+    # latest installer, the binary only. The account owns its configuration and
+    # its PATH. It runs after `common` (curl/tar) and after `applications` (the
+    # editor).
     - role: coding_agents
       tags: [coding_agents]
 

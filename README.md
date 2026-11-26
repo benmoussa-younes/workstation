@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.4.2-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.4.2)
+[![Release](https://img.shields.io/badge/release-0.5.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.0)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -35,8 +35,9 @@ locale. GNOME on Wayland is the only desktop it ships.
   uninstallable. An application must work without a tray: closing it quits.
 - **Developer tools on demand**: the `scripts` interpreter from its public
   release, the .NET 10 SDK, VSCodium and the rest through `developer_tools`;
-  OpenCode when `coding_agents_opencode_enabled` is set, pinned by version and
-  checksum.
+  OpenCode when `coding_agents_opencode_enabled` is set, at the vendor's latest
+  release. The account owns its configuration and its PATH; the role writes
+  only the installer's own binary.
 - **A security baseline**: nftables input default-deny with SSH restricted to
   your sources, a hardened sshd and SSH client, a password policy, kernel and
   audit hardening. Avahi runs only for the mDNS printer discovery; the location
@@ -75,9 +76,9 @@ locale. GNOME on Wayland is the only desktop it ships.
 - the target's host key in the controller's `known_hosts`;
 - network access to `packages.mozilla.org`; `packages.microsoft.com` when
   `developer_tools` selects `dotnet`; `download.vscodium.com` when it selects
-  `vscodium`; `github.com` and `api.github.com` when it selects `scripts` and
-  when `coding_agents_opencode_enabled` is true; `opencode.ai` only for that
-  opt-in installer.
+  `vscodium`; `github.com` and `api.github.com` when it selects `scripts`;
+  `opencode.ai` and `registry.npmjs.org` only when
+  `coding_agents_opencode_enabled` is true.
 
 Only `ansible.builtin` is used. `requirements.yml` declares no external
 collection.
@@ -87,10 +88,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.4.2.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.5.0.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.4.2-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.5.0-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -168,7 +169,7 @@ Plymouth is not proved by `--check`: the visual proof is a console check.
 | `dconf` | The GNOME policy as data: appearance, screen lock, privacy, an empty and locked extension set, favorites, the grid folders and the screen blank delay. |
 | `applications` | The declared applications, Mozilla Firefox's pinned repository and VLC as the default media handler. |
 | `developer` | The `developer_tools` groups, the .NET 10 SDK, the opt-in VSCodium and the Scripts interpreter. |
-| `coding_agents` | Opt-in OpenCode, pinned by version and SHA-256; no model, provider or credential. |
+| `coding_agents` | Opt-in OpenCode at the vendor's latest release, installed by its own script for the human account; no configuration file, no model, provider or credential. |
 | `gaming` | The opt-in Steam stack: Steam, controller rules, `gamemode`, `mangohud` and the 32-bit mesa/vulkan stack. |
 | `fonts` | The declared families, Noto Extra/CJK and the fontconfig proof. |
 | `audio` | The PipeWire package set; the session proof is after login. |
@@ -246,9 +247,13 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 ## Project status
 
-Maintained by one author; the current release is `0.4.2` (Debian amd64, GNOME 48
+Maintained by one author; the current release is `0.5.0` (Debian amd64, GNOME 48
 on Wayland). Known limits:
 
+- `coding_agents` installs OpenCode at the vendor's latest release on every
+  converge, without a version pin or a checksum: the owner accepts that
+  trade-off, and the role reports a change only when the installed version
+  moves.
 - GNOME's About panel reports "Disk capacity: unknown" on an NVMe host whose
   `UDisksDrive` size is 0 while the block device carries it; `lsblk` and `df -h`
   show the truth (upstream GNOME/udisks).
@@ -257,6 +262,17 @@ on Wayland). Known limits:
   proved on the laptop.
 - The end-of-play assertions (user namespaces, the Avahi/mDNS pair) are not
   tagged: a `--tags` converge skips them.
+
+## Migration from 0.4.x
+
+`0.5.0` retires the OpenCode pin and the machine-wide configuration:
+`coding_agents` no longer declares a version, a SHA-256 or a reinstall switch,
+and it writes no `/etc/opencode/opencode.json` or
+`/etc/profile.d/10-opencode.sh`. Remove `coding_agents_opencode_version`,
+`coding_agents_opencode_install_sha256` and `coding_agents_opencode_reinstall`
+from the site inventory; a host where the role is enabled removes the two files
+on its first converge. The account's `~/.config/opencode` and
+`/etc/opencode/skills` are untouched.
 
 ## Migration from 0.2.x
 

@@ -2,20 +2,17 @@
 # The coding agents the workstation serves, installed for the human account.
 #
 # OpenCode is the studio's agent harness. Its official installer is a script:
-# `curl -fsSL https://opencode.ai/v2/install | bash`. It downloads the CLI
-# package from the npm registry, writes `$HOME/.opencode/bin/opencode` (and the
-# `opencode2` compatibility shim), and — unless told otherwise — appends a PATH
-# export to the user's shell rc file. This role runs it with
-# `--no-modify-path` and declares the PATH itself in `/etc/profile.d`, so the
-# machine's state is a file the role owns and can read back, not a line
-# appended to a profile once.
+# `curl -fsSL https://opencode.ai/v2/install | bash`. Run as the account with
+# `--no-modify-path`, it resolves the vendor's latest release, writes
+# `$HOME/.opencode/bin/opencode` (and the `opencode2` compatibility shim) and
+# edits no shell rc file. The role installs that latest release on every
+# converge and writes nothing else: the configuration, the model, the
+# credentials and the PATH belong to the account.
 #
-# The configuration is the machine-wide one: OpenCode V2 reads
-# `/etc/opencode/opencode.json` for every user on the host, and it has the
-# highest precedence of the file locations. The product declares the schema,
-# leaves the model and the credentials to the account, and keeps automatic
-# updates on "notify" so a running session is never replaced underneath the
-# user.
+# The installer is deliberately not pinned: the owner accepts the vendor's
+# latest release without a checksum. The role reports a change only when the
+# installed version moves, so a second converge with no new release prints
+# `changed=0`.
 
 coding_agents_user: "{{ workstation_user | default('') }}"
 
@@ -23,43 +20,13 @@ coding_agents_user: "{{ workstation_user | default('') }}"
 # `getent passwd` rather than guessing a path from the account name.
 coding_agents_home: ""
 
-# Opt-in, and pinned. The vendor's installer is `curl ... | bash` by default,
-# which installs whatever upstream published that day: a workstation the product
-# owns must converge to the same binary every time. When enabled, a version and
-# the installer's SHA-256 are mandatory; the role fetches the script once,
-# verifies it, and runs it with `--version <pinned> --no-modify-path`.
+# Opt-in. Enabling it runs the vendor's installer as the account, at the
+# vendor's latest release and without a checksum; everything the installer does
+# not write itself stays the account's.
 coding_agents_opencode_enabled: false
 coding_agents_opencode_install_url: https://opencode.ai/v2/install
-coding_agents_opencode_install_sha256: ""
-coding_agents_opencode_version: ""
-coding_agents_opencode_installer_cache_dir: /var/cache/workstation
-coding_agents_opencode_installer_path: >-
-  {{ coding_agents_opencode_installer_cache_dir }}/opencode-install-{{ coding_agents_opencode_version }}.sh
 coding_agents_opencode_bin_dir: "{{ coding_agents_home }}/.opencode/bin"
 coding_agents_opencode_bin: "{{ coding_agents_opencode_bin_dir }}/opencode"
-
-# Set to true to re-run the installer on a host that already has the binary.
-# False keeps the converge idempotent; a version bump is a deliberate act.
-coding_agents_opencode_reinstall: false
-
-# The machine-wide configuration directory OpenCode V2 reads.
-coding_agents_system_config_dir: /etc/opencode
-coding_agents_opencode_config_file: "{{ coding_agents_system_config_dir }}/opencode.json"
-
-# The PATH the installer would have appended to a shell rc. One file under
-# `/etc/profile.d` reaches every login shell of every account; `$HOME` is
-# expanded by the shell, so each account points at its own install.
-coding_agents_profile_file: /etc/profile.d/10-opencode.sh
-
-# What the product declares. `$schema` lets the editor validate the file;
-# `update: notify` never installs a new CLI under a running session; the
-# formatter is on because the studio's code is formatted by the tool, not by
-# hand. The model, the providers and the credentials belong to the account and
-# are deliberately absent.
-coding_agents_opencode_config:
-  "$schema": https://opencode.ai/config.json
-  update: notify
-  formatter: true
 
 # The commands the installer needs. `common` already declares the packages that
 # provide them; the role asserts rather than re-installs, so a host without the
