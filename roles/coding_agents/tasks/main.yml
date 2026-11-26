@@ -1,10 +1,10 @@
 ---
 # The coding agents, installed for the human account the workstation serves.
 #
-# The installer is the vendor's own script, run as the account and only when
-# the binary is absent. Nothing here writes a model, a provider or a secret:
-# those are the account's, and the machine-wide file the product owns declares
-# only the schema, the update policy and the formatter.
+# The installer is the vendor's own script, run as the account at the vendor's
+# latest release. Nothing here writes a model, a provider, a secret or a
+# configuration file: those are the account's. The only path the role writes is
+# the installer's own `$HOME/.opencode/bin`, with its compatibility shim.
 
 - name: The account the coding agents serve is named
   ansible.builtin.assert:
@@ -57,108 +57,79 @@
          | map(attribute='item') | list }}. The OpenCode installer needs them;
       the `common` role declares the packages that provide them.
 
-- name: The pinned installer is declared
-  ansible.builtin.assert:
-    that:
-      - coding_agents_opencode_version | length > 0
-      - coding_agents_opencode_install_sha256 is match('^[0-9a-f]{64}$')
-    fail_msg: >-
-      coding_agents_opencode_enabled requires `coding_agents_opencode_version`
-      and `coding_agents_opencode_install_sha256` (64 lowercase hex digits).
-      The role never runs an unpinned vendor installer.
-  when: coding_agents_opencode_enabled | bool
-
-- name: The machine-wide configuration directory exists
+# The previous release owned a machine-wide configuration and a PATH drop-in.
+# 0.5.0 retires them: OpenCode reads the account's own configuration, and the
+# account owns its PATH. The skills directory under `/etc/opencode` is never
+# named here.
+- name: The machine-wide files the previous release wrote are removed
   ansible.builtin.file:
-    path: "{{ coding_agents_system_config_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/opencode/opencode.json
+    - /etc/profile.d/10-opencode.sh
   when: coding_agents_opencode_enabled | bool
 
-# OpenCode V2 reads `/etc/opencode/opencode.json` for every user and gives it
-# the highest precedence. JSON, not JSONC: the file is generated, never
-# hand-edited, and the account's own configuration stays in its home.
-- name: The machine-wide OpenCode configuration is declared
-  ansible.builtin.copy:
-    content: "{{ coding_agents_opencode_config | to_nice_json }}\n"
-    dest: "{{ coding_agents_opencode_config_file }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: coding_agents_opencode_enabled | bool
-
-- name: The OpenCode PATH is declared for every login shell
-  ansible.builtin.copy:
-    content: |
-      # Ansible managed
-      # SPDX-License-Identifier: AGPL-3.0-or-later
-      #
-      # The OpenCode installer wants to append this line to the shell's rc file.
-      # The product runs it with `--no-modify-path` and declares the PATH here
-      # instead: one file, read by every login shell, and read back by the role.
-      case ":$PATH:" in
-        *":$HOME/.opencode/bin:"*) ;;
-        *) PATH="$HOME/.opencode/bin:$PATH" ;;
-      esac
-      export PATH
-    dest: "{{ coding_agents_profile_file }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: coding_agents_opencode_enabled | bool
-
-- name: The OpenCode binary is present
-  ansible.builtin.stat:
-    path: "{{ coding_agents_opencode_bin }}"
-  register: coding_agents_opencode_binary
-
-- name: The installer cache directory exists
-  ansible.builtin.file:
-    path: "{{ coding_agents_opencode_installer_cache_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-  when: coding_agents_opencode_enabled | bool
-
-- name: The pinned installer is fetched and verified
-  ansible.builtin.get_url:
-    url: "{{ coding_agents_opencode_install_url }}"
-    dest: "{{ coding_agents_opencode_installer_path }}"
-    checksum: "sha256:{{ coding_agents_opencode_install_sha256 }}"
-    owner: root
-    group: root
-    mode: "0755"
-  when:
-    - coding_agents_opencode_enabled | bool
-    - not ansible_check_mode
-
-- name: OpenCode is installed from the verified installer
-  ansible.builtin.command:  # noqa: command-instead-of-module
-    argv:
-      - /bin/bash
-      - "{{ coding_agents_opencode_installer_path }}"
-      - --version
-      - "{{ coding_agents_opencode_version }}"
-      - --no-modify-path
+# One task, not three: Ansible's `changed_when` only sees the result of the task
+# it belongs to, so the version read before the installer and the one read after
+# must be compared here. The installer runs on every converge; the role reports
+# changed only when the installed version moves. The binary creates its own XDG
+# directories even for `--version`, so both reads use a scratch directory: the
+# account's `~/.config/opencode` stays untouched.
+- name: OpenCode is installed at the vendor's latest release
+  ansible.builtin.shell:  # noqa: command-instead-of-shell
+    cmd: |
+      set -o pipefail
+      scratch="$(mktemp -d "${TMPDIR:-/tmp}/opencode-converge-XXXXXX")" || exit 1
+      trap 'rm -rf "$scratch"' EXIT
+      export XDG_CONFIG_HOME="$scratch/config"
+      export XDG_CACHE_HOME="$scratch/cache"
+      export XDG_DATA_HOME="$scratch/data"
+      export XDG_STATE_HOME="$scratch/state"
+      before="$({{ coding_agents_opencode_bin | quote }} --version 2>/dev/null || true)"
+      curl -fsSL {{ coding_agents_opencode_install_url | quote }} \
+        | /bin/bash -s -- --no-modify-path
+      installer_rc=$?
+      after="$({{ coding_agents_opencode_bin | quote }} --version 2>/dev/null || true)"
+      printf 'before: %s\nafter: %s\n' "${before:-absent}" "${after:-absent}"
+      [ "$installer_rc" -eq 0 ] || exit "$installer_rc"
+      if [ "$before" = "$after" ]; then
+        printf 'coding-agents-changed=false\n'
+      else
+        printf 'coding-agents-changed=true\n'
+      fi
   args:
-    creates: "{{ coding_agents_opencode_bin }}"
+    executable: /bin/bash
   become: true
   become_user: "{{ coding_agents_user }}"
   environment:
     HOME: "{{ coding_agents_home }}"
     SHELL: /bin/bash
+    # The installer's own `check_version` runs any `opencode` it finds on PATH.
+    # A fixed PATH confines it to the commands it needs, so it never executes
+    # the account's existing binary before installing the new one.
+    PATH: /usr/bin:/bin
   register: coding_agents_opencode_install
+  changed_when: "'coding-agents-changed=true' in coding_agents_opencode_install.stdout"
   when:
     - coding_agents_opencode_enabled | bool
-    - coding_agents_opencode_reinstall | bool
-      or not coding_agents_opencode_binary.stat.exists
+    - not ansible_check_mode
 
+# The binary creates its own XDG directories even for `--version`. A scratch
+# directory under the system temporary directory keeps the account's
+# `~/.config/opencode` untouched by the read-back.
 - name: The installed OpenCode answers
-  ansible.builtin.command:  # noqa: command-instead-of-module
-    cmd: "{{ coding_agents_opencode_bin }} --version"
+  ansible.builtin.shell:  # noqa: command-instead-of-shell
+    cmd: |
+      scratch="$(mktemp -d "${TMPDIR:-/tmp}/opencode-version-XXXXXX")" || exit 1
+      trap 'rm -rf "$scratch"' EXIT
+      XDG_CONFIG_HOME="$scratch/config" \
+      XDG_CACHE_HOME="$scratch/cache" \
+      XDG_DATA_HOME="$scratch/data" \
+      XDG_STATE_HOME="$scratch/state" \
+        "{{ coding_agents_opencode_bin }}" --version
+  args:
+    executable: /bin/bash
   register: coding_agents_opencode_running
   changed_when: false
   failed_when: false
@@ -166,7 +137,9 @@
   become_user: "{{ coding_agents_user }}"
   environment:
     HOME: "{{ coding_agents_home }}"
-  when: coding_agents_opencode_enabled | bool
+  when:
+    - coding_agents_opencode_enabled | bool
+    - not ansible_check_mode
 
 - name: OpenCode is installed and runs
   ansible.builtin.assert:
@@ -178,21 +151,8 @@
       answered rc={{ coding_agents_opencode_running.rc | default('?') }}
       `{{ coding_agents_opencode_running.stdout | default('') | trim }}`
       `{{ coding_agents_opencode_running.stderr | default('') | trim }}`.
-      The installer needs `{{ coding_agents_opencode_install_url }}` and
-      `registry.npmjs.org`.
-  when:
-    - coding_agents_opencode_enabled | bool
-    - not ansible_check_mode
-
-- name: The installed OpenCode is the pinned version
-  ansible.builtin.assert:
-    that:
-      - coding_agents_opencode_version | string in coding_agents_opencode_running.stdout
-    fail_msg: >-
-      {{ inventory_hostname }}: OpenCode reports
-      `{{ coding_agents_opencode_running.stdout | default('') | trim }}`, not the
-      pinned `{{ coding_agents_opencode_version }}`. Bump the pin and set
-      `coding_agents_opencode_reinstall: true` for one run.
+      The installer needs `{{ coding_agents_opencode_install_url }}`,
+      `opencode.ai` and `registry.npmjs.org`.
   when:
     - coding_agents_opencode_enabled | bool
     - not ansible_check_mode

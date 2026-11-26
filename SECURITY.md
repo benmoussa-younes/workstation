@@ -4,14 +4,14 @@
 
 | Version | Supported |
 |---|---|
-| 0.4.x | yes |
+| 0.5.x | yes |
 | older | no |
 
 A release is supported until a later release explicitly withdraws it. Debian
 amd64 is the supported base; a future Debian release is added when the product
 declares it.
 
-Security fixes are considered on a **best-effort** basis for the current 0.4.x
+Security fixes are considered on a **best-effort** basis for the current 0.5.x
 tree. There is no long-term support branch, support contract, response-time
 guarantee or warranty, express or implied. The product is distributed under
 **AGPL-3.0-or-later**, the documentation under **CC-BY-SA-4.0** and the Plymouth
@@ -65,6 +65,12 @@ Out of scope:
 - It does not store a secret outside the site vault and the root-only files the
   roles create.
 - It does not install a Flatpak by default.
+- It does not pin the OpenCode installer: when
+  `coding_agents_opencode_enabled` is set, the role runs the vendor's installer
+  (`https://opencode.ai/v2/install`) as the account, at the vendor's latest
+  release and without a checksum. This is an owner-accepted trade-off. The role
+  writes only `$HOME/.opencode/bin`; the account owns `~/.config/opencode`, its
+  shell files and its PATH, and the role never touches `/etc/opencode/skills`.
 
 ## Hardening baseline
 
