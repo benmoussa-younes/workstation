@@ -13,11 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `coding_agents` installs OpenCode at the vendor's latest release on every
   converge, as the human account, with the vendor installer's
-  `--no-modify-path`. The role compares the installed version before and after
-  the install and reports changed only when it moves, so a second converge with
-  no new release prints `changed=0`. The installer is deliberately unpinned:
-  the product accepts the vendor's latest release without a checksum, by owner
-  decision.
+  `--no-modify-path`. The install task compares the installed version before
+  and after the install and reports changed only when it moves, so a second
+  converge with no new release prints `changed=0`. The installer is deliberately
+  unpinned: the product accepts the vendor's latest release without a checksum,
+  by owner decision.
 
 ### Removed
 

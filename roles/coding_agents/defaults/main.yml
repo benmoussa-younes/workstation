@@ -10,9 +10,9 @@
 # credentials and the PATH belong to the account.
 #
 # The installer is deliberately not pinned: the owner accepts the vendor's
-# latest release without a checksum. The role reports a change only when the
-# installed version moves, so a second converge with no new release prints
-# `changed=0`.
+# latest release without a checksum. The install step reports a change only when
+# the installed version moves, so a second converge with no new release prints
+# `changed=0`; the first 0.5.0 converge removes the 0.4.x files, once.
 
 coding_agents_user: "{{ workstation_user | default('') }}"
 

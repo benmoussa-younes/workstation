@@ -8,8 +8,9 @@ argument_specs:
         (`https://opencode.ai/v2/install`) for `coding_agents_user`, as that
         account, with `--no-modify-path`. The installer is not pinned: it
         resolves the upstream release and writes only `$HOME/.opencode/bin`
-        (the binary and its compatibility shim). A converge reports changed
-        only when the installed version moves.
+        (the binary and its compatibility shim). The install step reports
+        changed only when the installed version moves; the one-time removal of
+        the 0.4.x files is reported once.
       - >-
         The role writes no configuration file and no PATH drop-in. The account
         owns `~/.config/opencode`, its shell files and its PATH;

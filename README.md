@@ -37,7 +37,7 @@ locale. GNOME on Wayland is the only desktop it ships.
   release, the .NET 10 SDK, VSCodium and the rest through `developer_tools`;
   OpenCode when `coding_agents_opencode_enabled` is set, at the vendor's latest
   release. The account owns its configuration and its PATH; the role writes
-  only the installer's own binary.
+  only the installer's own `~/.opencode/bin` (the binary and its shim).
 - **A security baseline**: nftables input default-deny with SSH restricted to
   your sources, a hardened sshd and SSH client, a password policy, kernel and
   audit hardening. Avahi runs only for the mDNS printer discovery; the location
@@ -252,8 +252,9 @@ on Wayland). Known limits:
 
 - `coding_agents` installs OpenCode at the vendor's latest release on every
   converge, without a version pin or a checksum: the owner accepts that
-  trade-off, and the role reports a change only when the installed version
-  moves.
+  trade-off, and the install step reports a change only when the installed
+  version moves. The first 0.5.0 converge also removes the two 0.4.x files,
+  once.
 - GNOME's About panel reports "Disk capacity: unknown" on an NVMe host whose
   `UDisksDrive` size is 0 while the block device carries it; `lsblk` and `df -h`
   show the truth (upstream GNOME/udisks).
@@ -270,9 +271,13 @@ on Wayland). Known limits:
 and it writes no `/etc/opencode/opencode.json` or
 `/etc/profile.d/10-opencode.sh`. Remove `coding_agents_opencode_version`,
 `coding_agents_opencode_install_sha256` and `coding_agents_opencode_reinstall`
-from the site inventory; a host where the role is enabled removes the two files
-on its first converge. The account's `~/.config/opencode` and
-`/etc/opencode/skills` are untouched.
+from the site inventory; the configuration and cache options of 0.4.x
+(`coding_agents_opencode_config`, `coding_agents_system_config_dir`,
+`coding_agents_opencode_config_file`, `coding_agents_profile_file`,
+`coding_agents_opencode_installer_cache_dir`,
+`coding_agents_opencode_installer_path`) are gone with them. A host where the
+role is enabled removes the two files on its first converge. The account's
+`~/.config/opencode` and `/etc/opencode/skills` are untouched.
 
 ## Migration from 0.2.x
 

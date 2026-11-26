@@ -94,9 +94,9 @@
       printf 'before: %s\nafter: %s\n' "${before:-absent}" "${after:-absent}"
       [ "$installer_rc" -eq 0 ] || exit "$installer_rc"
       if [ "$before" = "$after" ]; then
-        printf 'changed=false\n'
+        printf 'coding-agents-changed=false\n'
       else
-        printf 'changed=true\n'
+        printf 'coding-agents-changed=true\n'
       fi
   args:
     executable: /bin/bash
@@ -105,13 +105,12 @@
   environment:
     HOME: "{{ coding_agents_home }}"
     SHELL: /bin/bash
-    # The installer's own `check_version` runs any `opencode` it finds on PATH;
-    # an existing binary would create its XDG directories in the home before
-    # the new one is installed. A fixed PATH confines the installer to the
-    # commands it actually needs.
+    # The installer's own `check_version` runs any `opencode` it finds on PATH.
+    # A fixed PATH confines it to the commands it needs, so it never executes
+    # the account's existing binary before installing the new one.
     PATH: /usr/bin:/bin
   register: coding_agents_opencode_install
-  changed_when: "'changed=true' in coding_agents_opencode_install.stdout"
+  changed_when: "'coding-agents-changed=true' in coding_agents_opencode_install.stdout"
   when:
     - coding_agents_opencode_enabled | bool
     - not ansible_check_mode
