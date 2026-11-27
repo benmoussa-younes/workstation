@@ -179,3 +179,17 @@ security_ssh_client_pubkey_accepted_algorithms:
 # legacy bastion): `true` enables PasswordAuthentication and
 # KbdInteractiveAuthentication together. The default is key-only.
 security_ssh_client_password_authentication: false
+
+# The passphrase prompt. The policy above answers "which algorithms", not "who
+# asks for the passphrase": an ssh or git call with no terminal (a GUI
+# application, a hook) needs an askpass binary, and Debian installs none by
+# default. The three packages register the same `ssh-askpass` alternative; the
+# GNOME one is the desktop choice, the x11 and fullscreen ones are the fallback
+# packages. `SSH_ASKPASS` is deliberately NOT written: OpenSSH 10 falls back
+# to `/usr/bin/ssh-askpass` when the variable is unset, and `environment.d` is
+# not read by login, su or sshd. An empty list is a site that runs without a
+# GUI prompt.
+security_ssh_client_askpass_packages:
+  - ssh-askpass
+  - ssh-askpass-gnome
+  - ssh-askpass-fullscreen

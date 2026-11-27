@@ -29,7 +29,7 @@ added to this table in the same change that creates it.
 | `display` | GDM: the unit, `WaylandEnable` in `daemon.conf`, the greeter's logo key, the seat read back. Never a hand-made `display-manager.service` alias. | implemented |
 | `plymouth` | The Workstation boot splash: the theme, its boot/shutdown/reboot messages, its selection and the initramfs, read back. | implemented |
 | `branding` | The wallpaper, GDM's logo and GRUB's image, from this product's own assets. | implemented |
-| `security` | nftables input policy (IPv4 and IPv6 sources for SSH, mDNS and the extra services), sshd, the system-wide SSH client drop-in, the password and lockout policy. mDNS 5353 is accepted from the site's sources for the printer discovery. | implemented |
+| `security` | nftables input policy (IPv4 and IPv6 sources for SSH, mDNS and the extra services), sshd, the system-wide SSH client drop-in, the desktop passphrase prompt (`ssh-askpass`), the password and lockout policy. mDNS 5353 is accepted from the site's sources for the printer discovery. | implemented |
 
 The `security` role also writes `/etc/ssh/ssh_config.d/99-workstation.conf`. Debian
 includes that directory before its own `Host *` block, and `ssh_config` keeps the
@@ -37,6 +37,12 @@ first value it reads, so the drop-in applies to every account without a file in
 any home. A user's `~/.ssh/config` is still read before the system files and can
 override it: the drop-in is the product's policy, not a guarantee against a
 user's own file.
+
+The role also installs `ssh-askpass`, `ssh-askpass-gnome` and
+`ssh-askpass-fullscreen`: an ssh or git call with no terminal needs a prompt,
+and Debian installs none by default. `SSH_ASKPASS` is not written, because
+OpenSSH 10 falls back to `/usr/bin/ssh-askpass` when it is unset; `environment.d`
+would not reach `login`, `su` or `sshd` anyway.
 
 A role is `implemented` once its tasks, defaults and `meta/argument_specs.yml`
 exist and a converge proves it; the evidence is the gate and the converge.

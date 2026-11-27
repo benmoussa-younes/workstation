@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `security` installs `ssh-askpass`, `ssh-askpass-gnome` and
+  `ssh-askpass-fullscreen`, so an ssh or git call with no terminal can ask for
+  a passphrase. `SSH_ASKPASS` is not written: OpenSSH 10 falls back to
+  `/usr/bin/ssh-askpass`, and `environment.d` is not read by `login`, `su` or
+  `sshd`.
+
 ## [0.5.0] - 2026-11-26
 
 ### Changed
