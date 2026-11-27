@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `push.autoSetupRemote`, `color.ui`) and the human account's
   `user.name`/`user.email` when the site declares them. Each key is written and
   read back; no whole-file template overwrites the site's own settings.
+- `security` offers an opt-in bounded agent cache
+  (`security_ssh_client_add_keys_to_agent`, empty by default): a value such as
+  `8h` writes `Match localuser` + `AddKeysToAgent`, so only the human account
+  caches a key; a service account never matches.
 
 ## [0.5.0] - 2026-11-26
 

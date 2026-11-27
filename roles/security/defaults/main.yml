@@ -193,3 +193,9 @@ security_ssh_client_askpass_packages:
   - ssh-askpass
   - ssh-askpass-gnome
   - ssh-askpass-fullscreen
+
+# The opt-in agent cache: empty is off, `8h` caches the key for eight hours.
+# The block is scoped with `Match localuser`, so a service account never
+# matches. `AddKeysToAgent yes` would cache for the agent's lifetime, which the
+# OpenSSH unit starts without a limit; the site chooses a value deliberately.
+security_ssh_client_add_keys_to_agent: ""
