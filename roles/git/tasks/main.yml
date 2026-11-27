@@ -1,0 +1,158 @@
+---
+- name: The Git account is declared
+  ansible.builtin.assert:
+    that:
+      - git_user | length > 0
+    fail_msg: >-
+      Declare `workstation_user` (or `git_user`): the Git role writes the
+      account's identity and cannot guess it.
+
+- name: The Git account is read
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ git_user }}"
+
+- name: The Git account home is set
+  ansible.builtin.set_fact:
+    git_home: >-
+      {{ git_home if git_home | length > 0
+         else ansible_facts['getent_passwd'][git_user][4] }}
+
+- name: The Git account home is read
+  ansible.builtin.stat:
+    path: "{{ git_home }}"
+  register: git_home_stat
+
+- name: The Git account has a usable home
+  ansible.builtin.assert:
+    that:
+      - git_home_stat.stat.isdir | default(false)
+    fail_msg: >-
+      {{ inventory_hostname }}: `{{ git_user }}` has `{{ git_home }}` as its
+      home, and it is not a directory.
+
+# Checked before any write: a half identity must not leave `/etc/gitconfig`
+# changed and then fail.
+- name: The Git identity is declared together
+  ansible.builtin.assert:
+    that:
+      - (git_user_name | length > 0) == (git_user_email | length > 0)
+    fail_msg: >-
+      Declare both `git_user_name` and `git_user_email`, or neither: a half
+      identity is a config git refuses to use.
+
+# -- the system defaults ------------------------------------------------------
+# Writing a key is not the proof: every key is read first (so an unchanged
+# converge writes nothing), then read back from git itself. The reads run in
+# check mode too, so a dry run shows what the host carries.
+- name: The system Git settings are read
+  ansible.builtin.command:
+    argv: [git, config, --system, --get, "{{ item.key }}"]
+  loop: "{{ git_system_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: git_system_current
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The system Git settings are set
+  ansible.builtin.command:
+    argv: [git, config, --system, --replace-all, "{{ item.item.key }}", "{{ item.item.value | string }}"]
+  loop: "{{ git_system_current.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - not ansible_check_mode
+    - (item.stdout | default('') | trim) != (item.item.value | string)
+  changed_when: true
+
+- name: The system Git settings are read back
+  ansible.builtin.command:
+    argv: [git, config, --system, --get, "{{ item.key }}"]
+  loop: "{{ git_system_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: git_system_readback
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: The system Git settings are the declared ones
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - item.stdout | trim == item.item.value | string
+    fail_msg: >-
+      {{ inventory_hostname }}: `git config --system --get {{ item.item.key }}`
+      is `{{ item.stdout | default('') | trim }}`, not `{{ item.item.value }}`.
+  loop: "{{ git_system_readback.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: not ansible_check_mode
+
+# -- the account identity -----------------------------------------------------
+- name: The account Git identity is read
+  ansible.builtin.command:
+    argv: [git, config, --global, --get, "{{ item.key }}"]
+  loop: "{{ git_identity | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: git_identity_current
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  become_user: "{{ git_user }}"
+  environment:
+    HOME: "{{ git_home }}"
+  when: git_user_name | length > 0
+
+- name: The account Git identity is set
+  ansible.builtin.command:
+    argv: [git, config, --global, --replace-all, "{{ item.item.key }}", "{{ item.item.value | string }}"]
+  loop: "{{ git_identity_current.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - not ansible_check_mode
+    - git_user_name | length > 0
+    - (item.stdout | default('') | trim) != (item.item.value | string)
+  changed_when: true
+  become: true
+  become_user: "{{ git_user }}"
+  environment:
+    HOME: "{{ git_home }}"
+
+- name: The account Git identity is read back
+  ansible.builtin.command:
+    argv: [git, config, --global, --get, "{{ item.key }}"]
+  loop: "{{ git_identity | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: git_identity_readback
+  changed_when: false
+  failed_when: false
+  become: true
+  become_user: "{{ git_user }}"
+  environment:
+    HOME: "{{ git_home }}"
+  when:
+    - not ansible_check_mode
+    - git_user_name | length > 0
+
+- name: The account Git identity is the declared one
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - item.stdout | trim == item.item.value | string
+    fail_msg: >-
+      {{ inventory_hostname }}: `git config --global --get {{ item.item.key }}`
+      for `{{ git_user }}` is `{{ item.stdout | default('') | trim }}`, not
+      `{{ item.item.value }}`.
+  loop: "{{ git_identity_readback.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - not ansible_check_mode
+    - git_user_name | length > 0

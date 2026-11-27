@@ -1,0 +1,30 @@
+---
+# The human account's Git configuration. `common` installs git; this role
+# declares the system defaults and the account identity, key by key. It never
+# templates a whole file, so a site's own keys in `/etc/gitconfig` or
+# `~/.gitconfig` survive.
+
+git_user: "{{ workstation_user | default('') }}"
+
+# The home is read from getent, never guessed from the account name.
+git_home: ""
+
+# `git config --system` keys. The values are strings: git prints exactly what
+# it stores, and the read-back compares strings.
+git_system_settings:
+  init.defaultBranch: main
+  user.useConfigOnly: "true"
+  fetch.prune: "true"
+  pull.rebase: "true"
+  push.autoSetupRemote: "true"
+  color.ui: auto
+
+# The account identity, declared by the site. Both or neither: a half identity
+# is a config git refuses to use, so the role fails before writing.
+git_user_name: ""
+git_user_email: ""
+
+# The keys written with `git config --global` as the account.
+git_identity:
+  user.name: "{{ git_user_name }}"
+  user.email: "{{ git_user_email }}"
