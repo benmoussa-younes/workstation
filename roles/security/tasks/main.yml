@@ -532,6 +532,15 @@
     group: root
     mode: "0755"
 
+- name: The SSH agent cache has a declared account
+  ansible.builtin.assert:
+    that:
+      - workstation_user | default('') | length > 0
+    fail_msg: >-
+      security_ssh_client_add_keys_to_agent is set but workstation_user is
+      empty: the Match localuser scope has no account.
+  when: security_ssh_client_add_keys_to_agent | string | length > 0
+
 - name: The SSH client hardening drop-in is in place
   ansible.builtin.template:
     src: ssh-client-security.conf.j2
@@ -619,6 +628,46 @@
       {{ inventory_hostname }}: `ssh -G -F {{ security_ssh_client_config_file }}`
       does not report the declared SSH client policy.
   when: not ansible_check_mode
+
+- name: The SSH agent cache is read for the human account
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -G -F {{ security_ssh_client_config_file }} localhost
+  become: true
+  become_user: "{{ workstation_user }}"
+  register: security_ssh_client_agent_cache
+  changed_when: false
+  check_mode: false
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_add_keys_to_agent | string | length > 0
+
+- name: The SSH agent cache is read for a second account
+  ansible.builtin.command:
+    cmd: /usr/bin/ssh -G -F {{ security_ssh_client_config_file }} localhost
+  become: true
+  become_user: root
+  register: security_ssh_client_agent_cache_root
+  changed_when: false
+  check_mode: false
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_add_keys_to_agent | string | length > 0
+
+- name: The SSH agent cache is enabled for the human account only
+  ansible.builtin.assert:
+    that:
+      - "'addkeystoagent no' not in security_ssh_client_agent_cache.stdout"
+      - "'addkeystoagent false' not in security_ssh_client_agent_cache.stdout"
+      - >-
+        'addkeystoagent no' in security_ssh_client_agent_cache_root.stdout
+        or 'addkeystoagent false' in security_ssh_client_agent_cache_root.stdout
+    fail_msg: >-
+      {{ inventory_hostname }}: the Match localuser block does not apply to
+      `{{ workstation_user }}` alone (the account must not report
+      addkeystoagent no or false, and the second account must).
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_add_keys_to_agent | string | length > 0
 
 - name: The system SSH configuration is read
   ansible.builtin.slurp:

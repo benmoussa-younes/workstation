@@ -262,6 +262,30 @@ function check_askpass(root: path) -> list<string> {
     return result
 }
 
+function check_ssh_agent_cache(root: path) -> list<string> {
+    let defaults = read_text(root, "roles/security/defaults/main.yml")
+    let specs = read_text(root, "roles/security/meta/argument_specs.yml")
+    let template = read_text(root, "roles/security/templates/ssh-client-security.conf.j2")
+    let tasks = read_text(root, "roles/security/tasks/main.yml")
+    let mutable result: list<string> = []
+    for problem in note(defaults.contains("security_ssh_client_add_keys_to_agent: \"\"") and specs.contains("security_ssh_client_add_keys_to_agent:") and specs.contains("default: \"\""), "ssh agent cache contract", "the client defaults and argument specs do not declare an empty security_ssh_client_add_keys_to_agent") {
+        result.append(problem)
+    }
+    let mutable match_user = false
+    for line in template.lines() {
+        if line.trim_whitespace().starts_with("Match user ") {
+            match_user = true
+        }
+    }
+    for problem in note(template.contains("security_ssh_client_add_keys_to_agent | string | length") and template.contains("Match localuser") and template.contains("AddKeysToAgent") and not match_user, "ssh agent cache template", "the client template has no conditional Match localuser AddKeysToAgent block, or it uses Match user") {
+        result.append(problem)
+    }
+    for problem in note(tasks.contains("addkeystoagent no") and tasks.contains("addkeystoagent false"), "ssh agent cache read-back", "the role does not read addkeystoagent no and false back") {
+        result.append(problem)
+    }
+    return result
+}
+
 # The human account's Git configuration is a role contract: the six system
 # keys and their values, the account variables, the play entry and the
 # catalog row. A role that exists but writes nothing, or is not run, is the
@@ -512,6 +536,9 @@ for problem in check_identity(root) {
     failures.append(problem)
 }
 for problem in check_askpass(root) {
+    failures.append(problem)
+}
+for problem in check_ssh_agent_cache(root) {
     failures.append(problem)
 }
 for problem in check_git(root) {

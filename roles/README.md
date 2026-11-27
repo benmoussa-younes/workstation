@@ -45,6 +45,10 @@ and Debian installs none by default. `SSH_ASKPASS` is not written, because
 OpenSSH 10 falls back to `/usr/bin/ssh-askpass` when it is unset; `environment.d`
 would not reach `login`, `su` or `sshd` anyway.
 
+The opt-in `security_ssh_client_add_keys_to_agent` (empty by default) writes a
+`Match localuser` block with `AddKeysToAgent` for the human account only; a
+service account never matches.
+
 A role is `implemented` once its tasks, defaults and `meta/argument_specs.yml`
 exist and a converge proves it; the evidence is the gate and the converge.
 A role that cannot work without a value declares it and fails loudly; it never

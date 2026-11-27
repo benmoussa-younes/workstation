@@ -52,3 +52,10 @@ KbdInteractiveAuthentication {{ 'yes' if security_ssh_client_password_authentica
 # StrictHostKeyChecking is deliberately NOT set: it stays at Debian's `ask`,
 # which refuses an unknown host instead of trusting it silently. This file never
 # relaxes it; a site that needs `accept-new` does so in its own file.
+{% if security_ssh_client_add_keys_to_agent | string | length > 0 %}
+
+# The site's opt-in agent cache, for the human account only. `Match localuser`
+# is the local name; `Match user` would be the remote one and is wrong here.
+Match localuser {{ workstation_user }}
+    AddKeysToAgent {{ security_ssh_client_add_keys_to_agent | string }}
+{% endif %}
