@@ -218,15 +218,45 @@ function block_after(lines: list<string>, marker: string, limit: integer) -> lis
     return block
 }
 
+# The lines under a YAML key until the next line at the key's own indentation.
+function option_block(lines: list<string>, key: string, indent: string) -> list<string> {
+    let mutable inside = false
+    let mutable block: list<string> = []
+    for line in lines {
+        if line.starts_with(indent + key + ":") {
+            inside = true
+        } else if inside {
+            if line.starts_with(indent + " ") or line.trim_whitespace() == "" {
+                block.append(line)
+            } else {
+                inside = false
+            }
+        }
+    }
+    return block
+}
+
+function previous_line(lines: list<string>, needle: string) -> string {
+    let mutable previous = ""
+    for line in lines {
+        if line.contains(needle) {
+            return previous
+        }
+        previous = line
+    }
+    return ""
+}
+
 function check_askpass(root: path) -> list<string> {
     let defaults = read_text(root, "roles/security/defaults/main.yml")
     let specs = read_text(root, "roles/security/meta/argument_specs.yml")
     let tasks = read_text(root, "roles/security/tasks/main.yml")
+    let packages = ["ssh-askpass", "ssh-askpass-gnome", "ssh-askpass-fullscreen"]
     let mutable result: list<string> = []
     let mutable missing: list<string> = []
-    for package in ["ssh-askpass", "ssh-askpass-gnome", "ssh-askpass-fullscreen"] {
+    for package in packages {
         let mutable found = false
-        for line in defaults.lines() {
+        for line in option_block(defaults.lines(), "security_ssh_client_askpass_packages", "") {
             if line.trim_whitespace() == "- " + package {
                 found = true
             }
@@ -238,25 +268,29 @@ function check_askpass(root: path) -> list<string> {
     for problem in note(missing.length() == 0, "security askpass packages", missing.join(", ")) {
         result.append(problem)
     }
-    for problem in note(specs.contains("security_ssh_client_askpass_packages:"), "security askpass contract", "meta/argument_specs.yml does not declare security_ssh_client_askpass_packages") {
+    let mutable spec_missing: list<string> = []
+    for package in packages {
+        let mutable found = false
+        for line in option_block(specs.lines(), "security_ssh_client_askpass_packages", "      ") {
+            if line.trim_whitespace() == "- " + package {
+                found = true
+            }
+        }
+        if not found {
+            spec_missing.append(package)
+        }
+    }
+    for problem in note(spec_missing.length() == 0, "security askpass contract", spec_missing.join(", ")) {
         result.append(problem)
     }
-    let install = block_after(tasks.lines(), "- name: The SSH askpass packages are installed", 8)
-    let mutable apt = false
+    let name_line = "name: \"\{\{ security_ssh_client_askpass_packages \}\}\""
     let mutable present = false
-    let mutable named = false
-    for line in install {
-        if line.trim_whitespace() == "ansible.builtin.apt:" {
-            apt = true
-        }
+    for line in block_after(tasks.lines(), name_line, 4) {
         if line.trim_whitespace() == "state: present" {
             present = true
         }
-        if line.contains("security_ssh_client_askpass_packages") {
-            named = true
-        }
     }
-    for problem in note(apt and present and named, "security askpass install", "tasks/main.yml has no apt task that installs security_ssh_client_askpass_packages with state present") {
+    for problem in note(previous_line(tasks.lines(), name_line).trim_whitespace() == "ansible.builtin.apt:" and present, "security askpass install", "tasks/main.yml has no apt task whose name is security_ssh_client_askpass_packages with state present") {
         result.append(problem)
     }
     return result
@@ -268,7 +302,13 @@ function check_ssh_agent_cache(root: path) -> list<string> {
     let template = read_text(root, "roles/security/templates/ssh-client-security.conf.j2")
     let tasks = read_text(root, "roles/security/tasks/main.yml")
     let mutable result: list<string> = []
-    for problem in note(defaults.contains("security_ssh_client_add_keys_to_agent: \"\"") and specs.contains("security_ssh_client_add_keys_to_agent:") and specs.contains("default: \"\""), "ssh agent cache contract", "the client defaults and argument specs do not declare an empty security_ssh_client_add_keys_to_agent") {
+    let mutable spec_default = false
+    for line in block_after(specs.lines(), "security_ssh_client_add_keys_to_agent:", 6) {
+        if line.trim_whitespace() == "default: \"\"" {
+            spec_default = true
+        }
+    }
+    for problem in note(defaults.contains("security_ssh_client_add_keys_to_agent: \"\"") and spec_default, "ssh agent cache contract", "the client defaults and argument specs do not declare an empty security_ssh_client_add_keys_to_agent") {
         result.append(problem)
     }
     let mutable match_user = false
@@ -280,7 +320,7 @@ function check_ssh_agent_cache(root: path) -> list<string> {
     for problem in note(template.contains("security_ssh_client_add_keys_to_agent | string | length") and template.contains("Match localuser") and template.contains("AddKeysToAgent") and not match_user, "ssh agent cache template", "the client template has no conditional Match localuser AddKeysToAgent block, or it uses Match user") {
         result.append(problem)
     }
-    for problem in note(tasks.contains("addkeystoagent no") and tasks.contains("addkeystoagent false"), "ssh agent cache read-back", "the role does not read addkeystoagent no and false back") {
+    for problem in note(tasks.contains("addkeystoagent no") and tasks.contains("addkeystoagent false") and tasks.contains("become_user: root"), "ssh agent cache read-back", "the role does not read addkeystoagent no and false back as a second account") {
         result.append(problem)
     }
     return result
