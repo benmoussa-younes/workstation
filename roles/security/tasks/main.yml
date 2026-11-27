@@ -563,8 +563,8 @@
 
 - name: The SSH client drop-in this role declares is kept
   ansible.builtin.set_fact:
-    security_ssh_client_declared:
-      - "{{ security_ssh_client_config_file }}"
+    security_ssh_client_declared: >-
+      {{ [security_ssh_client_config_file] + security_ssh_client_kept }}
 
 - name: The SSH client drop-ins are attached to a package, or not
   ansible.builtin.command:

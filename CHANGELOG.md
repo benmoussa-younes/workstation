@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-27
+
 ### Added
 
 - `security` installs `ssh-askpass`, `ssh-askpass-gnome` and
@@ -23,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`security_ssh_client_add_keys_to_agent`, empty by default): a value such as
   `8h` writes `Match localuser` + `AddKeysToAgent`, so only the human account
   caches a key; a service account never matches.
+- `security` never retires a client drop-in named in
+  `security_ssh_client_kept` (default empty): a site's `50-site.conf` stays in
+  place, and the site accepts that it sorts before `99-workstation.conf`. A
+  foreign file that is not listed is still retired.
 
 ## [0.5.0] - 2026-11-26
 
@@ -358,6 +364,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Wi-Fi keyfile is root-only and the interface is owned by NetworkManager.
 - The session is Wayland-only, with GDM's policy in a drop-in.
 
-[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.1
 [0.5.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.0
 [0.1.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0

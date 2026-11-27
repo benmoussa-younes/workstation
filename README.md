@@ -1,6 +1,6 @@
 # Workstation Edition
 
-[![Release](https://img.shields.io/badge/release-0.5.0-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.0)
+[![Release](https://img.shields.io/badge/release-0.5.1-blue)](https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.1)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue)](LICENSE)
 [![CI](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/benmoussa-younes/workstation/actions/workflows/ci.yml)
 
@@ -88,10 +88,10 @@ collection.
 From the release tarball:
 
 ```sh
-ansible-galaxy collection install benmoussa-workstation-0.5.0.tar.gz -p ./collections
+ansible-galaxy collection install benmoussa-workstation-0.5.1.tar.gz -p ./collections
 ```
 
-The release also carries `workstation-0.5.0-src.tar.gz` (the source tree with the
+The release also carries `workstation-0.5.1-src.tar.gz` (the source tree with the
 example inventory and the repository tooling) and `SHA256SUMS`:
 
 ```sh
@@ -247,7 +247,7 @@ Debian's `softwaves`; the emerald images are new work, and the whole theme is
 
 ## Project status
 
-Maintained by one author; the current release is `0.5.0` (Debian amd64, GNOME 48
+Maintained by one author; the current release is `0.5.1` (Debian amd64, GNOME 48
 on Wayland). Known limits:
 
 - `coding_agents` installs OpenCode at the vendor's latest release on every
