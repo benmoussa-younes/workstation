@@ -345,25 +345,70 @@ function check_git(root: path) -> list<string> {
         "color.ui: auto"
     ]
     let mutable result: list<string> = []
+    let defaults_block = option_block(defaults.lines(), "git_system_settings", "")
     let mutable missing: list<string> = []
     for setting in settings {
-        if not defaults.contains(setting) {
+        let mutable found = false
+        for line in defaults_block {
+            if line.trim_whitespace() == setting {
+                found = true
+            }
+        }
+        if not found {
             missing.append(setting)
         }
     }
     for problem in note(missing.length() == 0, "git role defaults", missing.join(", ")) {
         result.append(problem)
     }
+    let specs_block = option_block(specs.lines(), "git_system_settings", "      ")
     let mutable spec_missing: list<string> = []
     for setting in settings {
-        if not specs.contains(setting) {
+        let mutable found = false
+        for line in specs_block {
+            if line.trim_whitespace() == setting {
+                found = true
+            }
+        }
+        if not found {
             spec_missing.append(setting)
         }
     }
     for problem in note(spec_missing.length() == 0, "git role contract", spec_missing.join(", ")) {
         result.append(problem)
     }
-    for problem in note(specs.contains("git_user_name:") and specs.contains("git_user_email:"), "git role identity contract", "meta/argument_specs.yml does not declare git_user_name and git_user_email") {
+    let mutable defaults_name = false
+    let mutable defaults_email = false
+    for line in defaults.lines() {
+        if line.trim_whitespace() == "git_user_name: \"\"" {
+            defaults_name = true
+        }
+        if line.trim_whitespace() == "git_user_email: \"\"" {
+            defaults_email = true
+        }
+    }
+    let mutable specs_name = false
+    let mutable specs_email = false
+    for line in specs.lines() {
+        if line.trim_whitespace() == "git_user_name:" {
+            specs_name = true
+        }
+        if line.trim_whitespace() == "git_user_email:" {
+            specs_email = true
+        }
+    }
+    let identity_contract = defaults_name and defaults_email and specs_name and specs_email
+    let mutable name_key = false
+    let mutable email_key = false
+    for line in option_block(defaults.lines(), "git_identity", "") {
+        if line.trim_whitespace().starts_with("user.name:") {
+            name_key = true
+        }
+        if line.trim_whitespace().starts_with("user.email:") {
+            email_key = true
+        }
+    }
+    for problem in note(identity_contract and name_key and email_key, "git role identity contract", "the Git identity variables or git_identity keys are missing") {
         result.append(problem)
     }
     let mutable developer_line = -1
