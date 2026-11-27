@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-27
+
 ### Added
 
 - `security` installs `ssh-askpass`, `ssh-askpass-gnome` and
@@ -362,6 +364,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Wi-Fi keyfile is root-only and the interface is owned by NetworkManager.
 - The session is Wayland-only, with GDM's policy in a drop-in.
 
-[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/benmoussa-younes/workstation/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.1
 [0.5.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.5.0
 [0.1.0]: https://github.com/benmoussa-younes/workstation/releases/tag/v0.1.0
