@@ -194,6 +194,19 @@ argument_specs:
           `/etc/ssh/ssh_config.d/*.conf` before its own `Host *` block, so this
           file applies to every account without a file in a home; a user's
           `~/.ssh/config` can still override it.
+      security_ssh_client_askpass_packages:
+        type: list
+        elements: str
+        required: false
+        default:
+          - ssh-askpass
+          - ssh-askpass-gnome
+          - ssh-askpass-fullscreen
+        description: >-
+          The passphrase-prompt packages. Debian installs no askpass binary by
+          default, so an ssh or git call with no terminal cannot ask for a
+          passphrase. All three register the `ssh-askpass` alternative; the
+          GNOME one is the desktop choice. An empty list disables the prompt.
       security_ssh_client_kex_algorithms:
         type: list
         elements: str

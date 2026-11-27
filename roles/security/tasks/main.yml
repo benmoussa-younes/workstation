@@ -450,6 +450,80 @@
       `ssh -Q kex`, `ssh -Q cipher`, `ssh -Q mac` and `ssh -Q key-sig`; the role
       wrote nothing.
 
+# The client policy names the algorithms, not the passphrase prompt. An ssh or
+# git call with no terminal needs an askpass binary, and Debian installs none by
+# default; the package is the fix, not an environment variable.
+- name: The SSH askpass packages are installed
+  ansible.builtin.apt:
+    name: "{{ security_ssh_client_askpass_packages }}"
+    state: present
+    cache_valid_time: 3600
+  when: security_ssh_client_askpass_packages | length > 0
+
+- name: The installed SSH askpass packages are read
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${db:Status-Status}' {{ item }}
+  loop: "{{ security_ssh_client_askpass_packages }}"
+  loop_control:
+    label: "{{ item }}"
+  register: security_ssh_client_askpass_installed
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_askpass_packages | length > 0
+
+- name: The SSH askpass packages are present
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - item.stdout | trim == 'installed'
+    fail_msg: >-
+      {{ inventory_hostname }}: package {{ item.item }} is not installed
+      (`dpkg-query` rc={{ item.rc }}, stdout `{{ item.stdout | trim }}`,
+      stderr `{{ item.stderr | trim }}`).
+  loop: "{{ security_ssh_client_askpass_installed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_askpass_packages | length > 0
+
+- name: The SSH askpass alternative is read
+  ansible.builtin.command:
+    cmd: update-alternatives --query ssh-askpass
+  register: security_ssh_client_askpass_alternative
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_askpass_packages | length > 0
+
+- name: The SSH askpass binary is read
+  ansible.builtin.stat:
+    path: /usr/bin/ssh-askpass
+    follow: true
+  register: security_ssh_client_askpass_binary
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_askpass_packages | length > 0
+
+- name: The SSH askpass alternative resolves to a binary
+  ansible.builtin.assert:
+    that:
+      - security_ssh_client_askpass_alternative.rc == 0
+      - "'Value: ' in security_ssh_client_askpass_alternative.stdout"
+      - security_ssh_client_askpass_binary.stat.exists
+      - security_ssh_client_askpass_binary.stat.isreg
+      - security_ssh_client_askpass_binary.stat.executable
+    fail_msg: >-
+      {{ inventory_hostname }}: the `ssh-askpass` alternative does not resolve
+      (`update-alternatives --query ssh-askpass` rc={{
+      security_ssh_client_askpass_alternative.rc }}).
+  when:
+    - not ansible_check_mode
+    - security_ssh_client_askpass_packages | length > 0
+
 - name: The SSH client drop-in directory exists
   ansible.builtin.file:
     path: "{{ security_ssh_client_config_file | dirname }}"

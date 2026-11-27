@@ -4,9 +4,9 @@
 #   scripts run tools/scripts/binaries/gate.scs
 #
 # It checks the tree, the version, the licences, the legacy names, the secret
-# and site-value shapes, the syntax of every playbook and the collection
-# archive itself. It writes nothing outside a temporary directory
-# and ends with exactly one VERDICT line.
+# and site-value shapes, the SSH askpass contract, the syntax of every playbook
+# and the collection archive itself. It writes nothing outside a temporary
+# directory and ends with exactly one VERDICT line.
 
 import "../modules/verdict.scs" as verdict
 import "../modules/repo.scs" as repo
@@ -196,6 +196,72 @@ function check_identity(root: path) -> list<string> {
     return result
 }
 
+# The desktop needs a passphrase prompt when ssh has no terminal. The client
+# policy lives in `security`; the binary is the missing piece, and a converge
+# that writes the policy without the prompt cannot answer it.
+function block_after(lines: list<string>, marker: string, limit: integer) -> list<string> {
+    let mutable inside = false
+    let mutable count = 0
+    let mutable block: list<string> = []
+    for line in lines {
+        if line.trim_whitespace() == marker {
+            inside = true
+        } else if inside {
+            if line.trim_whitespace().starts_with("- name:") or count >= limit {
+                inside = false
+            } else {
+                block.append(line)
+                count = count + 1
+            }
+        }
+    }
+    return block
+}
+
+function check_askpass(root: path) -> list<string> {
+    let defaults = read_text(root, "roles/security/defaults/main.yml")
+    let specs = read_text(root, "roles/security/meta/argument_specs.yml")
+    let tasks = read_text(root, "roles/security/tasks/main.yml")
+    let mutable result: list<string> = []
+    let mutable missing: list<string> = []
+    for package in ["ssh-askpass", "ssh-askpass-gnome", "ssh-askpass-fullscreen"] {
+        let mutable found = false
+        for line in defaults.lines() {
+            if line.trim_whitespace() == "- " + package {
+                found = true
+            }
+        }
+        if not found {
+            missing.append(package)
+        }
+    }
+    for problem in note(missing.length() == 0, "security askpass packages", missing.join(", ")) {
+        result.append(problem)
+    }
+    for problem in note(specs.contains("security_ssh_client_askpass_packages:"), "security askpass contract", "meta/argument_specs.yml does not declare security_ssh_client_askpass_packages") {
+        result.append(problem)
+    }
+    let install = block_after(tasks.lines(), "- name: The SSH askpass packages are installed", 8)
+    let mutable apt = false
+    let mutable present = false
+    let mutable named = false
+    for line in install {
+        if line.trim_whitespace() == "ansible.builtin.apt:" {
+            apt = true
+        }
+        if line.trim_whitespace() == "state: present" {
+            present = true
+        }
+        if line.contains("security_ssh_client_askpass_packages") {
+            named = true
+        }
+    }
+    for problem in note(apt and present and named, "security askpass install", "tasks/main.yml has no apt task that installs security_ssh_client_askpass_packages with state present") {
+        result.append(problem)
+    }
+    return result
+}
+
 function sha256(root: path, relative: string) -> string {
     match process.run(process.request("sha256sum", [relative]).with_working_directory(root)) {
         ok(completed) => {
@@ -363,6 +429,9 @@ for problem in check_version(root) {
     failures.append(problem)
 }
 for problem in check_identity(root) {
+    failures.append(problem)
+}
+for problem in check_askpass(root) {
     failures.append(problem)
 }
 for problem in check_licences(root, true) {
