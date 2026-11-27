@@ -199,23 +199,44 @@ function check_identity(root: path) -> list<string> {
 # The desktop needs a passphrase prompt when ssh has no terminal. The client
 # policy lives in `security`; the binary is the missing piece, and a converge
 # that writes the policy without the prompt cannot answer it.
-function block_after(lines: list<string>, marker: string, limit: integer) -> list<string> {
-    let mutable inside = false
-    let mutable count = 0
+# The task block that contains a needle, delimited by the `- name:` lines:
+# a check keyed on a task parameter is not tied to the task name or a window.
+function task_block(lines: list<string>, needle: string) -> list<string> {
     let mutable block: list<string> = []
+    let mutable result: list<string> = []
+    let mutable found = false
     for line in lines {
-        if line.trim_whitespace() == marker {
-            inside = true
-        } else if inside {
-            if line.trim_whitespace().starts_with("- name:") or count >= limit {
-                inside = false
-            } else {
-                block.append(line)
-                count = count + 1
+        if line.trim_whitespace().starts_with("- name:") {
+            if not found and block.length() > 0 {
+                let mutable contains = false
+                for candidate in block {
+                    if candidate.contains(needle) {
+                        contains = true
+                    }
+                }
+                if contains {
+                    result = block
+                    found = true
+                }
             }
+            block = []
+        }
+        if not found {
+            block.append(line)
         }
     }
-    return block
+    if not found and block.length() > 0 {
+        let mutable contains = false
+        for candidate in block {
+            if candidate.contains(needle) {
+                contains = true
+            }
+        }
+        if contains {
+            result = block
+        }
+    }
+    return result
 }
 
 # The lines under a YAML key until the next line at the key's own indentation.
@@ -236,15 +257,9 @@ function option_block(lines: list<string>, key: string, indent: string) -> list<
     return block
 }
 
-function previous_line(lines: list<string>, needle: string) -> string {
-    let mutable previous = ""
-    for line in lines {
-        if line.contains(needle) {
-            return previous
-        }
-        previous = line
-    }
-    return ""
+function setting_line(line: string, setting: string) -> boolean {
+    let trimmed = line.trim_whitespace()
+    return trimmed == setting or trimmed.starts_with(setting + " #")
 }
 
 function check_askpass(root: path) -> list<string> {
@@ -284,13 +299,17 @@ function check_askpass(root: path) -> list<string> {
         result.append(problem)
     }
     let name_line = "name: \"\{\{ security_ssh_client_askpass_packages \}\}\""
+    let mutable apt = false
     let mutable present = false
-    for line in block_after(tasks.lines(), name_line, 4) {
+    for line in task_block(tasks.lines(), name_line) {
+        if line.trim_whitespace() == "ansible.builtin.apt:" {
+            apt = true
+        }
         if line.trim_whitespace() == "state: present" {
             present = true
         }
     }
-    for problem in note(previous_line(tasks.lines(), name_line).trim_whitespace() == "ansible.builtin.apt:" and present, "security askpass install", "tasks/main.yml has no apt task whose name is security_ssh_client_askpass_packages with state present") {
+    for problem in note(apt and present, "security askpass install", "tasks/main.yml has no apt task whose name is security_ssh_client_askpass_packages with state present") {
         result.append(problem)
     }
     return result
@@ -303,7 +322,7 @@ function check_ssh_agent_cache(root: path) -> list<string> {
     let tasks = read_text(root, "roles/security/tasks/main.yml")
     let mutable result: list<string> = []
     let mutable spec_default = false
-    for line in block_after(specs.lines(), "security_ssh_client_add_keys_to_agent:", 6) {
+    for line in option_block(specs.lines(), "security_ssh_client_add_keys_to_agent", "      ") {
         if line.trim_whitespace() == "default: \"\"" {
             spec_default = true
         }
@@ -320,7 +339,19 @@ function check_ssh_agent_cache(root: path) -> list<string> {
     for problem in note(template.contains("security_ssh_client_add_keys_to_agent | string | length") and template.contains("Match localuser") and template.contains("AddKeysToAgent") and not match_user, "ssh agent cache template", "the client template has no conditional Match localuser AddKeysToAgent block, or it uses Match user") {
         result.append(problem)
     }
-    for problem in note(tasks.contains("addkeystoagent no") and tasks.contains("addkeystoagent false") and tasks.contains("become_user: root"), "ssh agent cache read-back", "the role does not read addkeystoagent no and false back as a second account") {
+    let mutable read_back = false
+    for line in task_block(tasks.lines(), "addkeystoagent no") {
+        if line.contains("addkeystoagent false") {
+            read_back = true
+        }
+    }
+    let mutable root_scoped = false
+    for line in task_block(tasks.lines(), "security_ssh_client_agent_cache_root") {
+        if line.trim_whitespace() == "become_user: root" {
+            root_scoped = true
+        }
+    }
+    for problem in note(read_back and root_scoped, "ssh agent cache read-back", "the role does not read addkeystoagent no and false back as a second account") {
         result.append(problem)
     }
     return result
@@ -331,10 +362,28 @@ function check_ssh_client_kept(root: path) -> list<string> {
     let specs = read_text(root, "roles/security/meta/argument_specs.yml")
     let tasks = read_text(root, "roles/security/tasks/main.yml")
     let mutable result: list<string> = []
-    for problem in note(defaults.contains("security_ssh_client_kept: []") and specs.contains("security_ssh_client_kept:") and tasks.contains("security_ssh_client_kept"), "security kept drop-ins", "the kept list is not declared or used") {
+    let mutable defaults_kept = false
+    for line in defaults.lines() {
+        if line == "security_ssh_client_kept: []" {
+            defaults_kept = true
+        }
+    }
+    let mutable specs_kept = false
+    for line in specs.lines() {
+        if line == "      security_ssh_client_kept:" {
+            specs_kept = true
+        }
+    }
+    for problem in note(defaults_kept and specs_kept, "security kept drop-ins", "the kept list is not declared in the defaults and the argument specs") {
         result.append(problem)
     }
-    for problem in note(tasks.contains("[security_ssh_client_config_file] + security_ssh_client_kept"), "security kept union", "the declared list does not union the kept paths") {
+    let mutable union = false
+    for line in task_block(tasks.lines(), "security_ssh_client_declared") {
+        if line.trim_whitespace() == "\{\{ [security_ssh_client_config_file] + security_ssh_client_kept \}\}" {
+            union = true
+        }
+    }
+    for problem in note(union, "security kept union", "the declared list does not union the kept paths") {
         result.append(problem)
     }
     return result
@@ -364,7 +413,7 @@ function check_git(root: path) -> list<string> {
     for setting in settings {
         let mutable found = false
         for line in defaults_block {
-            if line.trim_whitespace() == setting {
+            if setting_line(line, setting) {
                 found = true
             }
         }
@@ -380,7 +429,7 @@ function check_git(root: path) -> list<string> {
     for setting in settings {
         let mutable found = false
         for line in specs_block {
-            if line.trim_whitespace() == setting {
+            if setting_line(line, setting) {
                 found = true
             }
         }
@@ -404,10 +453,10 @@ function check_git(root: path) -> list<string> {
     let mutable specs_name = false
     let mutable specs_email = false
     for line in specs.lines() {
-        if line.trim_whitespace() == "git_user_name:" {
+        if line == "      git_user_name:" {
             specs_name = true
         }
-        if line.trim_whitespace() == "git_user_email:" {
+        if line == "      git_user_email:" {
             specs_email = true
         }
     }
