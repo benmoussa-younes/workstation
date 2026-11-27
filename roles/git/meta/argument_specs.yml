@@ -1,0 +1,38 @@
+---
+argument_specs:
+  main:
+    short_description: The human account's minimal Git configuration.
+    description:
+      - >-
+        The system-wide Git defaults in `/etc/gitconfig` and the account's
+        identity in `~/.gitconfig`, written key by key. No whole-file template:
+        a site's own keys survive.
+    author: Younes BENMOUSSA
+    options:
+      git_user:
+        type: str
+        required: false
+        description: The human account; `workstation_user` by default.
+      git_home:
+        type: str
+        required: false
+        description: The account home, read from getent when empty.
+      git_system_settings:
+        type: dict
+        required: false
+        default:
+          init.defaultBranch: main
+          user.useConfigOnly: "true"
+          fetch.prune: "true"
+          pull.rebase: "true"
+          push.autoSetupRemote: "true"
+          color.ui: auto
+        description: The keys written with `git config --system`.
+      git_user_name:
+        type: str
+        required: false
+        description: The account's Git name; declare it with `git_user_email`.
+      git_user_email:
+        type: str
+        required: false
+        description: The account's Git email; declare it with `git_user_name`.

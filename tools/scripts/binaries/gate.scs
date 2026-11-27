@@ -4,9 +4,9 @@
 #   scripts run tools/scripts/binaries/gate.scs
 #
 # It checks the tree, the version, the licences, the legacy names, the secret
-# and site-value shapes, the SSH askpass contract, the syntax of every playbook
-# and the collection archive itself. It writes nothing outside a temporary
-# directory and ends with exactly one VERDICT line.
+# and site-value shapes, the SSH askpass and Git role contracts, the syntax of
+# every playbook and the collection archive itself. It writes nothing outside a
+# temporary directory and ends with exactly one VERDICT line.
 
 import "../modules/verdict.scs" as verdict
 import "../modules/repo.scs" as repo
@@ -262,6 +262,86 @@ function check_askpass(root: path) -> list<string> {
     return result
 }
 
+# The human account's Git configuration is a role contract: the six system
+# keys and their values, the account variables, the play entry and the
+# catalog row. A role that exists but writes nothing, or is not run, is the
+# failure this catches.
+function check_git(root: path) -> list<string> {
+    let defaults = read_text(root, "roles/git/defaults/main.yml")
+    let specs = read_text(root, "roles/git/meta/argument_specs.yml")
+    let tasks = read_text(root, "roles/git/tasks/main.yml")
+    let site = read_text(root, "playbooks/site.yml")
+    let catalog = read_text(root, "roles/README.md")
+    let settings = [
+        "init.defaultBranch: main",
+        "user.useConfigOnly: \"true\"",
+        "fetch.prune: \"true\"",
+        "pull.rebase: \"true\"",
+        "push.autoSetupRemote: \"true\"",
+        "color.ui: auto"
+    ]
+    let mutable result: list<string> = []
+    let mutable missing: list<string> = []
+    for setting in settings {
+        if not defaults.contains(setting) {
+            missing.append(setting)
+        }
+    }
+    for problem in note(missing.length() == 0, "git role defaults", missing.join(", ")) {
+        result.append(problem)
+    }
+    let mutable spec_missing: list<string> = []
+    for setting in settings {
+        if not specs.contains(setting) {
+            spec_missing.append(setting)
+        }
+    }
+    for problem in note(spec_missing.length() == 0, "git role contract", spec_missing.join(", ")) {
+        result.append(problem)
+    }
+    for problem in note(specs.contains("git_user_name:") and specs.contains("git_user_email:"), "git role identity contract", "meta/argument_specs.yml does not declare git_user_name and git_user_email") {
+        result.append(problem)
+    }
+    let mutable developer_line = -1
+    let mutable git_line = -1
+    let mutable index = 0
+    for line in site.lines() {
+        if line.trim_whitespace() == "- role: developer" {
+            developer_line = index
+        }
+        if line.trim_whitespace() == "- role: git" {
+            git_line = index
+        }
+        index = index + 1
+    }
+    for problem in note(git_line >= 0 and developer_line >= 0 and git_line > developer_line, "git role in the play", "playbooks/site.yml does not run the git role after developer") {
+        result.append(problem)
+    }
+    let mutable catalog_ok = false
+    for line in catalog.lines() {
+        if line.starts_with("| `git` |") and line.contains("| implemented |") {
+            catalog_ok = true
+        }
+    }
+    for problem in note(catalog_ok, "git role catalog", "roles/README.md has no implemented git row") {
+        result.append(problem)
+    }
+    let mutable system_write = false
+    let mutable global_write = false
+    for line in tasks.lines() {
+        if line.contains("--system") and line.contains("--replace-all") {
+            system_write = true
+        }
+        if line.contains("--global") and line.contains("--replace-all") {
+            global_write = true
+        }
+    }
+    for problem in note(system_write and global_write, "git role scopes", "roles/git/tasks/main.yml has no --system and --global write") {
+        result.append(problem)
+    }
+    return result
+}
+
 function sha256(root: path, relative: string) -> string {
     match process.run(process.request("sha256sum", [relative]).with_working_directory(root)) {
         ok(completed) => {
@@ -432,6 +512,9 @@ for problem in check_identity(root) {
     failures.append(problem)
 }
 for problem in check_askpass(root) {
+    failures.append(problem)
+}
+for problem in check_git(root) {
     failures.append(problem)
 }
 for problem in check_licences(root, true) {

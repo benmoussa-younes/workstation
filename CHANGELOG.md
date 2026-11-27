@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a passphrase. `SSH_ASKPASS` is not written: OpenSSH 10 falls back to
   `/usr/bin/ssh-askpass`, and `environment.d` is not read by `login`, `su` or
   `sshd`.
+- `git` writes the system Git defaults (`init.defaultBranch=main`,
+  `user.useConfigOnly=true`, `fetch.prune`, `pull.rebase`,
+  `push.autoSetupRemote`, `color.ui`) and the human account's
+  `user.name`/`user.email` when the site declares them. Each key is written and
+  read back; no whole-file template overwrites the site's own settings.
 
 ## [0.5.0] - 2026-11-26
 

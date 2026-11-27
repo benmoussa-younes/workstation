@@ -137,6 +137,12 @@
     - role: developer
       tags: [developer]
 
+    # The human account's minimal Git configuration: the system defaults and
+    # the identity the site declares, key by key. It runs after `developer`
+    # (which may install git-adjacent tools) and before the coding agents.
+    - role: git
+      tags: [git]
+
     # The coding agents, for the human account: OpenCode from the vendor's
     # latest installer, the binary only. The account owns its configuration and
     # its PATH. It runs after `common` (curl/tar) and after `applications` (the
