@@ -49,6 +49,10 @@ The opt-in `security_ssh_client_add_keys_to_agent` (empty by default) writes a
 `Match localuser` block with `AddKeysToAgent` for the human account only; a
 service account never matches.
 
+A site that writes its own client drop-in declares it in
+`security_ssh_client_kept`; the role never retires a listed file, and the site
+accepts that a `50-*.conf` may override a product directive.
+
 A role is `implemented` once its tasks, defaults and `meta/argument_specs.yml`
 exist and a converge proves it; the evidence is the gate and the converge.
 A role that cannot work without a value declares it and fails loudly; it never

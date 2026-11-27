@@ -326,6 +326,20 @@ function check_ssh_agent_cache(root: path) -> list<string> {
     return result
 }
 
+function check_ssh_client_kept(root: path) -> list<string> {
+    let defaults = read_text(root, "roles/security/defaults/main.yml")
+    let specs = read_text(root, "roles/security/meta/argument_specs.yml")
+    let tasks = read_text(root, "roles/security/tasks/main.yml")
+    let mutable result: list<string> = []
+    for problem in note(defaults.contains("security_ssh_client_kept: []") and specs.contains("security_ssh_client_kept:") and tasks.contains("security_ssh_client_kept"), "security kept drop-ins", "the kept list is not declared or used") {
+        result.append(problem)
+    }
+    for problem in note(tasks.contains("[security_ssh_client_config_file] + security_ssh_client_kept"), "security kept union", "the declared list does not union the kept paths") {
+        result.append(problem)
+    }
+    return result
+}
+
 # The human account's Git configuration is a role contract: the six system
 # keys and their values, the account variables, the play entry and the
 # catalog row. A role that exists but writes nothing, or is not run, is the
@@ -624,6 +638,9 @@ for problem in check_askpass(root) {
     failures.append(problem)
 }
 for problem in check_ssh_agent_cache(root) {
+    failures.append(problem)
+}
+for problem in check_ssh_client_kept(root) {
     failures.append(problem)
 }
 for problem in check_git(root) {

@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`security_ssh_client_add_keys_to_agent`, empty by default): a value such as
   `8h` writes `Match localuser` + `AddKeysToAgent`, so only the human account
   caches a key; a service account never matches.
+- `security` never retires a client drop-in named in
+  `security_ssh_client_kept` (default empty): a site's `50-site.conf` stays in
+  place, and the site accepts that it sorts before `99-workstation.conf`. A
+  foreign file that is not listed is still retired.
 
 ## [0.5.0] - 2026-11-26
 
