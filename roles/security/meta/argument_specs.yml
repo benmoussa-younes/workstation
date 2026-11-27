@@ -216,6 +216,15 @@ argument_specs:
           `Match localuser` block with `AddKeysToAgent`, scoped to the human
           account. `yes` caches for the agent lifetime, which has no limit
           here; the site chooses.
+      security_ssh_client_kept:
+        type: list
+        elements: str
+        required: false
+        default: []
+        description: >-
+          Client drop-ins the site owns and the role must never retire. A kept
+          `50-*.conf` sorts before `99-workstation.conf` and may override a
+          product directive; the site chooses that.
       security_ssh_client_kex_algorithms:
         type: list
         elements: str

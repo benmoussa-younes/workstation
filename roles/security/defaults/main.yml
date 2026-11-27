@@ -199,3 +199,9 @@ security_ssh_client_askpass_packages:
 # matches. `AddKeysToAgent yes` would cache for the agent's lifetime, which the
 # OpenSSH unit starts without a limit; the site chooses a value deliberately.
 security_ssh_client_add_keys_to_agent: ""
+
+# Client drop-ins the site owns. The role retires a file it does not declare
+# and no package owns; a site file is declared here. A kept `50-*.conf` sorts
+# before `99-workstation.conf` and may override a product directive: the site
+# chooses that, it is not an omission.
+security_ssh_client_kept: []
